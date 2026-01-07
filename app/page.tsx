@@ -4,9 +4,9 @@
 import { useState, useRef, useEffect } from "react";
 import { MUSIC_STYLES, MOODS } from "./lib/data";
 import { getHistory, saveProject, deleteProject, updateProjectTitle, type Project } from "./lib/storage";
-import { 
-  Music, Sparkles, Download, Disc, Mic2, 
-  ChevronDown, Edit3, Trash2, History, AlignLeft, X, Check, Pencil
+import {
+  Music, Sparkles, Download, Disc, Mic2,
+  ChevronDown, Edit3, Trash2, History, AlignLeft, X, Check, Pencil, Copy
 } from "lucide-react";
 
 type GenerationStep = "input" | "lyrics_editing" | "music_processing" | "completed";
@@ -97,6 +97,7 @@ export default function Home() {
   const [historyList, setHistoryList] = useState<Project[]>([]);
   const [isEditingTitle, setIsEditingTitle] = useState(false); // 【新增】是否正在修改标题
   const [tempTitle, setTempTitle] = useState(""); // 【新增】修改标题时的临时变量
+  const [copySuccess, setCopySuccess] = useState(false);
 
   const audioRefs = useRef<(HTMLAudioElement | null)[]>([]);
 
@@ -274,31 +275,45 @@ export default function Home() {
 
   const handleDownload = async (url: string, title: string) => {
     try {
-      // 移动设备兼容性处理
-      const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
-
-      if (isMobile) {
-        // 移动设备：直接在新标签页打开，让浏览器处理下载
-        window.open(url, '_blank');
-        return;
-      }
-
-      // 桌面设备：使用blob下载
+      // 直接下载文件到本地，不打开新页面
       const response = await fetch(url);
       const blob = await response.blob();
-      const blobUrl = window.URL.createObjectURL(blob);
+      const urlObj = window.URL.createObjectURL(blob);
       const a = document.createElement('a');
-      a.href = blobUrl;
+      a.href = urlObj;
       a.download = `${title}.mp3`;
       a.style.display = 'none';
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
-      window.URL.revokeObjectURL(blobUrl);
+      window.URL.revokeObjectURL(urlObj);
     } catch (error) {
-      // 如果blob下载失败，也在新标签页打开
-      console.error('Download failed:', error);
+      console.error('下载失败:', error);
+      // 降级方案：直接打开链接
       window.open(url, '_blank');
+    }
+  };
+
+  // 过滤歌词内容，移除[]标签
+  const filterLyricsForDisplay = (lyrics: string) => {
+    return lyrics.replace(/\[[^\]]*\]/g, '').trim();
+  };
+
+  const handleCopyLyrics = async (lyrics: string) => {
+    try {
+      await navigator.clipboard.writeText(lyrics);
+      setCopySuccess(true);
+      setTimeout(() => setCopySuccess(false), 2000);
+    } catch (error) {
+      // Fallback for older browsers
+      const textArea = document.createElement('textarea');
+      textArea.value = lyrics;
+      document.body.appendChild(textArea);
+      textArea.select();
+      document.execCommand('copy');
+      document.body.removeChild(textArea);
+      setCopySuccess(true);
+      setTimeout(() => setCopySuccess(false), 2000);
     }
   };
 
@@ -441,27 +456,131 @@ export default function Home() {
             {step === "completed" && currentProject && (
                 <div className="flex flex-col gap-6 animate-in slide-in-from-bottom-10">
                     <div className="bg-white rounded-[2.5rem] shadow-2xl overflow-hidden border border-white/60 relative">
-                        {/* 歌词浮层 */}
-                        {showLyricsPanel && !currentProject.isInstrumental && (
-                            <div className="absolute inset-0 z-20 bg-white/95 backdrop-blur-md p-8 overflow-y-auto animate-in fade-in">
-                                <div className="flex justify-between items-center mb-6">
-                                    <h3 className="font-bold text-gray-400 uppercase tracking-widest">Lyrics</h3>
-                                    <button onClick={() => setShowLyricsPanel(false)} className="p-2 bg-gray-100 rounded-full hover:bg-gray-200"><X size={20}/></button>
+                        <div className={`relative p-8 md:p-10 flex flex-col items-center text-center transition-all duration-500 ${
+                            showLyricsPanel ? 'h-[800px] md:h-[900px]' : ''
+                        }`}>
+                            {/* 封面和歌词切换区域 */}
+                            <div className={`relative mb-8 transition-all duration-500 ${
+                                showLyricsPanel ? 'w-full h-[600px] md:h-[700px]' : 'w-56 h-56 md:w-72 md:h-72'
+                            }`}>
+                                {/* 封面 */}
+                                <div
+                                    className={`absolute inset-0 w-full h-full rounded-[2rem] overflow-hidden shadow-2xl cursor-pointer transition-all duration-500 ${
+                                        showLyricsPanel ? 'opacity-0 scale-95 pointer-events-none' : 'opacity-100 scale-100'
+                                    }`}
+                                    onClick={() => !currentProject.isInstrumental && setShowLyricsPanel(true)}
+                                >
+                                    <img
+                                        src={currentProject.songs[activeSongIndex].imageUrl}
+                                        className="w-full h-full object-cover transition-transform duration-700 hover:scale-105"
+                                        alt="Album Cover"
+                                    />
+                                    <div className="absolute inset-0 bg-gradient-to-t from-black/50 to-transparent opacity-60"></div>
+                                    {!currentProject.isInstrumental && (
+                                        <div className="absolute inset-0 flex items-center justify-center opacity-0 hover:opacity-100 transition-opacity duration-300">
+                                            <div className="bg-black/70 rounded-full p-4 backdrop-blur-sm">
+                                                <AlignLeft size={32} className="text-white" />
+                                            </div>
+                                        </div>
+                                    )}
                                 </div>
-                                <div className="whitespace-pre-line text-gray-700 text-lg leading-relaxed font-medium">
-                                    {currentProject.lyrics || "No lyrics available."}
-                                </div>
-                            </div>
-                        )}
 
-                        <div className="relative p-8 md:p-10 flex flex-col items-center text-center">
-                            <div className="relative w-56 h-56 md:w-72 md:h-72 rounded-[2rem] overflow-hidden shadow-2xl mb-8 group">
-                                <img src={currentProject.songs[activeSongIndex].imageUrl} className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-110" />
-                                <div className="absolute inset-0 bg-gradient-to-t from-black/50 to-transparent opacity-60"></div>
+                                {/* 歌词面板 */}
+                                {!currentProject.isInstrumental && (
+                                    <div
+                                        className={`absolute inset-0 w-full h-full overflow-hidden transition-all duration-500 ${
+                                            showLyricsPanel ? 'opacity-100 scale-100' : 'opacity-0 scale-95 pointer-events-none'
+                                        }`}
+                                        style={showLyricsPanel ? {
+                                            top: '0',
+                                            left: '0',
+                                            right: '0',
+                                            bottom: '0',
+                                            height: '100%'
+                                        } : {}}
+                                    >
+                                        {/* 深蓝色玻璃效果背景 */}
+                                        <div className="absolute inset-4 bg-slate-900/30 backdrop-blur-xl rounded-[2rem] border border-slate-700/50 shadow-2xl"></div>
+
+                                        {/* 歌词面板背景 - 深蓝渐变 */}
+                                        <div className="absolute inset-4 bg-gradient-to-br from-slate-800/40 via-blue-900/30 to-indigo-900/40 backdrop-blur-xl rounded-[2rem]"></div>
+                                        <div className="absolute inset-4 bg-gradient-to-t from-slate-900/50 via-transparent to-slate-700/20 rounded-[2rem]"></div>
+
+                                        {/* 内容区域 */}
+                                        <div className="relative w-full h-full p-8 md:p-10 flex flex-col">
+                                            <div className="flex justify-between items-center mb-6">
+                                                <h3 className="font-bold text-cyan-300 uppercase tracking-widest text-sm drop-shadow-lg" style={{textShadow: '0 0 10px rgba(34, 211, 238, 0.5)'}}>歌词</h3>
+                                                <div className="flex gap-2">
+                                                    <button
+                                                        onClick={() => handleCopyLyrics(filterLyricsForDisplay(currentProject.lyrics || ""))}
+                                                        className={`p-2 rounded-full transition-all duration-300 border ${
+                                                            copySuccess
+                                                                ? 'bg-emerald-500/80 backdrop-blur-sm text-white border-emerald-400/50'
+                                                                : 'bg-slate-600/40 backdrop-blur-sm text-cyan-200 hover:bg-slate-500/50 border-slate-500/30'
+                                                        }`}
+                                                        title={copySuccess ? "已复制" : "复制歌词"}
+                                                    >
+                                                        {copySuccess ? (
+                                                            <Check size={16} className="animate-in zoom-in duration-200"/>
+                                                        ) : (
+                                                            <Copy size={16}/>
+                                                        )}
+                                                    </button>
+                                                    <button
+                                                        onClick={() => setShowLyricsPanel(false)}
+                                                        className="p-2 bg-slate-600/40 backdrop-blur-sm text-cyan-200 rounded-full hover:bg-slate-500/50 transition-colors border border-slate-500/30"
+                                                        title="返回封面"
+                                                    >
+                                                        <X size={16}/>
+                                                    </button>
+                                                </div>
+                                            </div>
+                                            <div className="flex-1 custom-scrollbar-auto">
+                                                <div className="text-cyan-100 text-lg md:text-xl leading-loose font-medium text-center tracking-wide"
+                                                     style={{
+                                                         textShadow: '0 0 15px rgba(34, 211, 238, 0.3), 0 0 30px rgba(34, 211, 238, 0.1)',
+                                                         filter: 'drop-shadow(0 0 5px rgba(34, 211, 238, 0.2))'
+                                                     }}>
+                                                    <div
+                                                        className="prose prose-lg prose-invert max-w-none"
+                                                        style={{
+                                                            wordBreak: 'break-word',
+                                                            overflowWrap: 'break-word',
+                                                            whiteSpace: 'pre-line',
+                                                            lineHeight: '1.9',
+                                                            letterSpacing: '0.03em',
+                                                            wordWrap: 'break-word',
+                                                            hyphens: 'auto'
+                                                        }}
+                                                    >
+                                                        {filterLyricsForDisplay(currentProject.lyrics || "暂无歌词").split('\n\n').map((paragraph, index) => (
+                                                            <div key={index} className="mb-8 last:mb-0">
+                                                                {paragraph.split('\n').map((line, lineIndex) => (
+                                                                    <div
+                                                                        key={lineIndex}
+                                                                        className="mb-4 last:mb-0 transition-all duration-500 hover:text-cyan-200 hover:translate-x-1 cursor-default select-text px-3 py-2 rounded-lg hover:bg-slate-600/20"
+                                                                        style={{
+                                                                            animationDelay: `${(index * 2 + lineIndex) * 100}ms`,
+                                                                            textShadow: '0 0 8px rgba(34, 211, 238, 0.4)'
+                                                                        }}
+                                                                    >
+                                                                        {line || '\u00A0'} {/* 空行显示空格 */}
+                                                                    </div>
+                                                                ))}
+                                                            </div>
+                                                        ))}
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                )}
                             </div>
 
                             {/* --- 标题修改区 --- */}
-                            <div className="w-full flex justify-center items-center gap-3 mb-2 relative">
+                            <div className={`w-full flex justify-center items-center gap-3 mb-2 relative transition-all duration-500 ${
+                                showLyricsPanel ? 'opacity-0 pointer-events-none' : 'opacity-100'
+                            }`}>
                                 {isEditingTitle ? (
                                     <div className="flex items-center gap-2 w-full max-w-md animate-in fade-in">
                                         <input 
@@ -492,17 +611,23 @@ export default function Home() {
                                 )}
                             </div>
                             
-                            <p className="text-purple-600 font-bold mb-8 text-sm uppercase tracking-wider bg-purple-50 px-3 py-1 rounded-full">{currentProject.styleLabel}</p>
+                            <p className={`text-purple-600 font-bold mb-8 text-sm uppercase tracking-wider bg-purple-50 px-3 py-1 rounded-full transition-all duration-500 ${
+                                showLyricsPanel ? 'opacity-0 pointer-events-none' : 'opacity-100'
+                            }`}>{currentProject.styleLabel}</p>
 
-                            <audio 
+                            <audio
                                 ref={el => { audioRefs.current[activeSongIndex] = el }}
-                                controls 
-                                src={currentProject.songs[activeSongIndex].audioUrl} 
-                                className="w-full mb-8"
+                                controls
+                                src={currentProject.songs[activeSongIndex].audioUrl}
+                                className={`w-full mb-8 transition-all duration-500 ${
+                                    showLyricsPanel ? 'opacity-0 pointer-events-none' : 'opacity-100'
+                                }`}
                                 onPlay={() => handlePlay(activeSongIndex)}
                             />
 
-                            <div className="grid grid-cols-2 gap-4 w-full max-w-lg">
+                            <div className={`grid grid-cols-2 gap-4 w-full max-w-lg transition-all duration-500 ${
+                                showLyricsPanel ? 'opacity-0 pointer-events-none' : 'opacity-100'
+                            }`}>
                                 <button 
                                     onClick={() => handleDownload(currentProject.songs[activeSongIndex].audioUrl, currentProject.title)}
                                     className="col-span-1 bg-gray-900 text-white py-4 rounded-xl font-bold flex items-center justify-center gap-2 hover:bg-black transition-transform hover:scale-105"
@@ -511,11 +636,16 @@ export default function Home() {
                                 </button>
                                 
                                 {!currentProject.isInstrumental ? (
-                                    <button 
-                                        onClick={() => setShowLyricsPanel(true)}
-                                        className="col-span-1 bg-white border-2 border-gray-100 text-gray-700 py-4 rounded-xl font-bold flex items-center justify-center gap-2 hover:bg-gray-50 transition-colors"
+                                    <button
+                                        onClick={() => setShowLyricsPanel(!showLyricsPanel)}
+                                        className={`col-span-1 py-4 rounded-xl font-bold flex items-center justify-center gap-2 transition-colors ${
+                                            showLyricsPanel
+                                                ? 'bg-purple-600 text-white border-2 border-purple-600'
+                                                : 'bg-white border-2 border-gray-100 text-gray-700 hover:bg-gray-50'
+                                        }`}
                                     >
-                                        <AlignLeft size={18} /> 查看歌词
+                                        <AlignLeft size={18} />
+                                        {showLyricsPanel ? '隐藏歌词' : '查看歌词'}
                                     </button>
                                 ) : (
                                     <div className="col-span-1 flex items-center justify-center text-gray-300 font-bold border-2 border-gray-50 rounded-xl bg-gray-50">

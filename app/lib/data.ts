@@ -7,8 +7,8 @@ export type StylePreset = {
 };
 
 export const MUSIC_STYLES: StylePreset[] = [
-  {
-    id: "pop_happy",
+  { 
+    id: "pop_happy", 
     label: "流行 - 欢快节奏",
     tags: [
         "modern upbeat pop, vocalist with bright tone, future bass elements, catchy synthesizer hook, driving drum beat, polished production, billboard top 100 style, energetic and optimistic, 120 bpm",
@@ -18,8 +18,8 @@ export const MUSIC_STYLES: StylePreset[] = [
         "Male Vocal, Starts with a crisp guitar arpeggio intro, light shaker, and hopeful chords, Verse 1 layers bright vocals over strummed guitar and soft kick, Verse 2 adds jangling riffs and subtle bass, Pre-chorus introduces piano stabs for tension, Chorus 1 explodes with driving drums, layered vocals, and uplifting chord swells, Chorus 2 doubles the intensity with harmony vocals and cymbal crashes, Second pre-chorus adds a tambourine pulse, Final Chorus 1 and 2 repeat with a soaring lead guitar, Outro fades with reverb-soaked guitar and soft vocal hums, evoking a hopeful sunrise"
     ]
   },
-  {
-    id: "pop_sad",
+  { 
+    id: "pop_sad", 
     label: "流行 - 情感叙事",
     tags: [
         "emotional piano ballad, soft vocals, cinematic strings section, slow tempo, deep bass, heartbroken atmosphere, wide stereo reverb, storytelling masterpiece",
@@ -38,8 +38,8 @@ export const MUSIC_STYLES: StylePreset[] = [
         "Taiwanese, K-ballad, Andante, power pop, piano-driven, violin, layered harmonies, vibratos Female voice, soaring falsetto, vocal power rich, sadness emotional resonance, heartfelt delivery, Female Vocal"
     ]
   },
-  {
-    id: "rock_male",
+  { 
+    id: "rock_male", 
     label: "摇滚 - 力量激昂",
     tags: [
         "stadium rock, powerful gritty vocals, distorted les paul guitar riffs, thunderous drums, anthem chorus, high energy, crowd cheering texture, epic guitar solo",
@@ -68,8 +68,8 @@ export const MUSIC_STYLES: StylePreset[] = [
         "Opens with a grunge rock intro of heavy distortion and salsa-inspired congas, Verse 1 pairs raw female vocals with a swinging salsa rhythm and fuzzy basslines, Verse 2 introduces syncopated timbales and a gritty guitar lick, The pre-chorus lifts with high notes and smooth piano chords for a seamless blend, Chorus 1 combines grunge guitar solos with passionate salsa beats and soaring vocals, Chorus 2 adds layered percussion and vocal ad-libs, The second pre-chorus softens with acoustic strums and subtle maracas, The outro fades with a fiery guitar solo and summer-energy dance rhythms"
     ]
   },
-  {
-    id: "chinese_folk",
+  { 
+    id: "chinese_folk", 
     label: "国风 - 民族融合",
     tags: [
         "chinese traditional folk, airy vocals, guzheng virtuoso, bamboo flute (dizi), light percussion, pentatonic scale, misty mountain atmosphere, tea ceremony vibe",
@@ -99,18 +99,18 @@ export const MUSIC_STYLES: StylePreset[] = [
         "Male Vocal, Instrumental Intro opens with mournful erhu and soft piano arpeggios, evoking quiet grief, Verse 1 layers delicate acoustic guitar strums and tearful vocals, keeping a sparse folk feel, Verse 2 adds gentle strings for warmth, Pre-chorus introduces a subtle kick drum and synth pad swell, building tension, Chorus 1 blooms with lush strings and emotive vocals, piano chords driving the melody, Chorus 2 deepens with a low bass pulse, intensifying the sorrow, Pre-chorus repeats with added cymbal swells, Chorus 1 and 2 return, now with a soaring erhu lead, Outro fades with solo piano and distant erhu, leaving a bittersweet resolve"
     ]
   },
-  {
-    id: "cyberpunk",
-    label: "电子 - 赛博朋克",
+  { 
+    id: "cyberpunk", 
+    label: "电子 - 赛博朋克", 
     tags: [
         "dark synthwave, processed robotic male vocals, arpeggiated analog synths, heavy saw bass, neon noir atmosphere, futuristic city rain, blade runner vibe",
         "industrial electronic, aggressive distorted bass, glitch effects, female ethereal vocals contrasting with heavy beats, cyberpunk 2077 combat music, high adrenaline",
         "futuristic chillwave, autotune vocals, holographic sound textures, deep sub bass, floating atmosphere, night driving in tokyo, neon lights visual"
     ]
   },
-  {
-    id: "rnb_soul",
-    label: "R&B - 慵懒灵魂",
+  { 
+    id: "rnb_soul", 
+    label: "R&B - 慵懒灵魂", 
     tags: [
         "neo-soul, smooth vocals, fender rhodes electric piano, jazz guitar chords, laid back groove, coffee shop vibe, warm vinyl crackle texture, romantic and chill",
         "alternative r&b, trap soul beats, deep 808 bass, sensual vocals, atmospheric pads, late night drive vibe, reverb heavy, modern production",

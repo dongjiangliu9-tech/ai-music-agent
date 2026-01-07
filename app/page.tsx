@@ -6,7 +6,7 @@ import { MUSIC_STYLES, MOODS } from "./lib/data";
 import { getHistory, saveProject, deleteProject, updateProjectTitle, type Project } from "./lib/storage";
 import {
   Music, Sparkles, Download, Disc, Mic2,
-  ChevronDown, Edit3, Trash2, History, AlignLeft, X, Check, Pencil, Copy
+  ChevronDown, ChevronUp, Edit3, Trash2, History, AlignLeft, X, Check, Pencil, Copy, Play, Pause
 } from "lucide-react";
 
 type GenerationStep = "input" | "lyrics_editing" | "music_processing" | "completed";
@@ -67,7 +67,7 @@ const ProgressBar = ({ progress, statusText }: { progress: number, statusText: s
             <span>{Math.round(progress)}%</span>
         </div>
         <div className="h-3 w-full bg-gray-100 rounded-full overflow-hidden">
-            <div 
+            <div
                 className="h-full bg-gradient-to-r from-purple-500 to-indigo-500 transition-all duration-300 ease-out rounded-full"
                 style={{ width: `${progress}%` }}
             ></div>
@@ -75,6 +75,168 @@ const ProgressBar = ({ progress, statusText }: { progress: number, statusText: s
         <p className="text-center text-gray-500 font-medium mt-4 animate-pulse">{statusText}</p>
     </div>
 );
+
+// --- 组件：自定义音频播放器 ---
+const CustomAudioPlayer = ({ src, onPlay }: { src: string, onPlay?: () => void }) => {
+    const [isPlaying, setIsPlaying] = useState(false);
+    const [currentTime, setCurrentTime] = useState(0);
+    const [duration, setDuration] = useState(0);
+    const [isDragging, setIsDragging] = useState(false);
+    const audioRef = useRef<HTMLAudioElement>(null);
+    const progressRef = useRef<HTMLDivElement>(null);
+
+    const togglePlay = () => {
+        if (!audioRef.current) return;
+        if (isPlaying) {
+            audioRef.current.pause();
+        } else {
+            audioRef.current.play();
+            onPlay?.();
+        }
+    };
+
+    const handleTimeUpdate = () => {
+        if (!audioRef.current || isDragging) return;
+        setCurrentTime(audioRef.current.currentTime);
+    };
+
+    const handleLoadedMetadata = () => {
+        if (!audioRef.current) return;
+        setDuration(audioRef.current.duration);
+    };
+
+    const handlePlay = () => {
+        setIsPlaying(true);
+        onPlay?.();
+    };
+
+    const handlePause = () => {
+        setIsPlaying(false);
+    };
+
+    const handleProgressClick = (e: React.MouseEvent<HTMLDivElement>) => {
+        if (!audioRef.current || !progressRef.current) return;
+
+        const rect = progressRef.current.getBoundingClientRect();
+        const clickX = e.clientX - rect.left;
+        const percentage = Math.max(0, Math.min(1, clickX / rect.width));
+        const newTime = percentage * duration;
+
+        audioRef.current.currentTime = newTime;
+        setCurrentTime(newTime);
+    };
+
+    const handleMouseDown = (e: React.MouseEvent<HTMLDivElement>) => {
+        e.preventDefault();
+        setIsDragging(true);
+        handleProgressClick(e);
+    };
+
+    const handleMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
+        if (!isDragging) return;
+        e.preventDefault();
+        handleProgressClick(e);
+    };
+
+    const handleMouseUp = (e: MouseEvent) => {
+        setIsDragging(false);
+    };
+
+    // 添加全局鼠标事件监听
+    useEffect(() => {
+        const handleGlobalMouseUp = () => setIsDragging(false);
+        const handleGlobalMouseMove = (e: MouseEvent) => {
+            if (isDragging && progressRef.current) {
+                const rect = progressRef.current.getBoundingClientRect();
+                const clickX = e.clientX - rect.left;
+                const percentage = Math.max(0, Math.min(1, clickX / rect.width));
+                const newTime = percentage * duration;
+
+                if (audioRef.current) {
+                    audioRef.current.currentTime = newTime;
+                    setCurrentTime(newTime);
+                }
+            }
+        };
+
+        if (isDragging) {
+            document.addEventListener('mousemove', handleGlobalMouseMove);
+            document.addEventListener('mouseup', handleGlobalMouseUp);
+        }
+
+        return () => {
+            document.removeEventListener('mousemove', handleGlobalMouseMove);
+            document.removeEventListener('mouseup', handleGlobalMouseUp);
+        };
+    }, [isDragging, duration]);
+
+    const formatTime = (time: number) => {
+        const minutes = Math.floor(time / 60);
+        const seconds = Math.floor(time % 60);
+        return `${minutes}:${seconds.toString().padStart(2, '0')}`;
+    };
+
+    return (
+        <div className="w-full max-w-md mx-auto">
+            <audio
+                ref={audioRef}
+                src={src}
+                onTimeUpdate={handleTimeUpdate}
+                onLoadedMetadata={handleLoadedMetadata}
+                onPlay={handlePlay}
+                onPause={handlePause}
+                onEnded={() => setIsPlaying(false)}
+            />
+
+            {/* 进度条 */}
+            <div className="mb-4">
+                <div
+                    ref={progressRef}
+                    className="relative h-4 bg-gray-200 rounded-full cursor-pointer overflow-hidden select-none hover:bg-gray-300 transition-colors duration-200"
+                    onMouseDown={handleMouseDown}
+                    onMouseMove={handleMouseMove}
+                    onMouseUp={handleMouseUp}
+                    onMouseLeave={handleMouseUp}
+                >
+                    <div
+                        className="h-full bg-gradient-to-r from-purple-500 to-indigo-500 transition-all duration-100"
+                        style={{ width: `${duration ? (currentTime / duration) * 100 : 0}%` }}
+                    />
+                    {/* 拖拽指示器 */}
+                    <div
+                        className="absolute top-1/2 -translate-y-1/2 w-5 h-5 bg-gradient-to-r from-purple-500 to-indigo-600 border-2 border-white rounded-full shadow-xl transition-all duration-200"
+                        style={{
+                            left: `calc(${duration ? (currentTime / duration) * 100 : 0}% - 10px)`,
+                            opacity: isDragging ? 1 : undefined,
+                            transform: isDragging ? 'scale(1.2)' : undefined,
+                            boxShadow: '0 4px 12px rgba(147, 51, 234, 0.4), 0 2px 4px rgba(0, 0, 0, 0.1)'
+                        }}
+                    />
+                </div>
+            </div>
+
+            {/* 控制区域 */}
+            <div className="flex items-center justify-between">
+                <button
+                    onClick={togglePlay}
+                    className={`w-12 h-12 rounded-full flex items-center justify-center text-white transition-all duration-200 shadow-lg ${
+                        isPlaying
+                            ? 'bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700'
+                            : 'bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700'
+                    } hover:scale-105`}
+                >
+                    {isPlaying ? <Pause size={20} /> : <Play size={20} fill="white" />}
+                </button>
+
+                <div className="flex items-center gap-2 text-sm font-medium text-gray-600">
+                    <span className="min-w-[35px] text-center">{formatTime(currentTime)}</span>
+                    <span>/</span>
+                    <span className="min-w-[35px] text-center">{formatTime(duration)}</span>
+                </div>
+            </div>
+        </div>
+    );
+};
 
 export default function Home() {
   // 核心状态
@@ -98,6 +260,7 @@ export default function Home() {
   const [isEditingTitle, setIsEditingTitle] = useState(false); // 【新增】是否正在修改标题
   const [tempTitle, setTempTitle] = useState(""); // 【新增】修改标题时的临时变量
   const [copySuccess, setCopySuccess] = useState(false);
+  const [isHistoryCollapsed, setIsHistoryCollapsed] = useState(false);
 
   const audioRefs = useRef<(HTMLAudioElement | null)[]>([]);
 
@@ -279,8 +442,95 @@ export default function Home() {
       const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
 
       if (isMobile) {
-        // 移动设备：直接在新标签页打开，让浏览器处理下载
-        window.open(url, '_blank');
+        // 移动设备：优先使用Web Share API
+        if (supportsWebShare()) {
+          await shareAudioFile(url, title);
+        } else {
+          // 创建一个更友好的下载提示页面
+          const downloadWindow = window.open('', '_blank', 'width=400,height=300');
+          if (downloadWindow) {
+            downloadWindow.document.write(`
+              <!DOCTYPE html>
+              <html>
+                <head>
+                  <meta charset="UTF-8">
+                  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+                  <title>下载音乐 - ${title}</title>
+                  <style>
+                    body {
+                      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+                      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                      color: white;
+                      margin: 0;
+                      padding: 20px;
+                      min-height: 100vh;
+                      display: flex;
+                      flex-direction: column;
+                      align-items: center;
+                      justify-content: center;
+                      text-align: center;
+                    }
+                    .container {
+                      max-width: 300px;
+                      background: rgba(255, 255, 255, 0.1);
+                      padding: 30px;
+                      border-radius: 20px;
+                      backdrop-filter: blur(10px);
+                      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
+                    }
+                    .title {
+                      font-size: 24px;
+                      font-weight: bold;
+                      margin-bottom: 10px;
+                    }
+                    .subtitle {
+                      font-size: 16px;
+                      opacity: 0.8;
+                      margin-bottom: 30px;
+                    }
+                    .download-btn {
+                      background: linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%);
+                      color: white;
+                      border: none;
+                      padding: 15px 30px;
+                      border-radius: 50px;
+                      font-size: 16px;
+                      font-weight: bold;
+                      cursor: pointer;
+                      text-decoration: none;
+                      display: inline-block;
+                      transition: transform 0.2s;
+                    }
+                    .download-btn:hover {
+                      transform: scale(1.05);
+                    }
+                    .instructions {
+                      margin-top: 20px;
+                      font-size: 14px;
+                      opacity: 0.7;
+                      line-height: 1.5;
+                    }
+                  </style>
+                </head>
+                <body>
+                  <div class="container">
+                    <div class="title">${title}</div>
+                    <div class="subtitle">AI Music Studio 音乐作品</div>
+                    <a href="${url}" class="download-btn" download="${title}.mp3">下载 MP3</a>
+                    <div class="instructions">
+                      点击上方按钮下载音乐文件。<br>
+                      如果下载不开始，请长按链接并选择"下载链接"。
+                    </div>
+                  </div>
+                </body>
+              </html>
+            `);
+            downloadWindow.document.close();
+          } else {
+            // 如果弹窗被阻止，直接打开URL
+            window.open(url, '_blank');
+          }
+        }
       } else {
         // 桌面设备：尝试直接下载
         const response = await fetch(url);
@@ -305,6 +555,39 @@ export default function Home() {
   // 过滤歌词内容，移除[]标签
   const filterLyricsForDisplay = (lyrics: string) => {
     return lyrics.replace(/\[[^\]]*\]/g, '').trim();
+  };
+
+  // 检查是否支持Web Share API
+  const supportsWebShare = () => {
+    return navigator.share && navigator.canShare;
+  };
+
+  // 移动端分享音频文件
+  const shareAudioFile = async (url: string, title: string) => {
+    try {
+      const response = await fetch(url);
+      const blob = await response.blob();
+      const file = new File([blob], `${title}.mp3`, { type: 'audio/mpeg' });
+
+      if (navigator.canShare({ files: [file] })) {
+        await navigator.share({
+          files: [file],
+          title: `${title} - AI Music Studio`,
+          text: '分享来自AI Music Studio的音乐作品'
+        });
+      } else {
+        // 如果不支持文件分享，回退到URL分享
+        await navigator.share({
+          title: `${title} - AI Music Studio`,
+          text: '分享来自AI Music Studio的音乐作品',
+          url: url
+        });
+      }
+    } catch (error) {
+      console.error('分享失败:', error);
+      // 分享失败时回退到打开URL
+      window.open(url, '_blank');
+    }
   };
 
   const handleCopyLyrics = async (lyrics: string) => {
@@ -507,17 +790,16 @@ export default function Home() {
                                             height: '100%'
                                         } : {}}
                                     >
-                                        {/* 深蓝色玻璃效果背景 */}
-                                        <div className="absolute inset-4 bg-slate-900/30 backdrop-blur-xl rounded-[2rem] border border-slate-700/50 shadow-2xl"></div>
+                                        {/* 深蓝色玻璃效果背景 - 调整边距 */}
+                                        <div className="absolute inset-2 bg-slate-900/30 backdrop-blur-xl rounded-[2rem] border border-slate-700/50 shadow-2xl"></div>
 
-                                        {/* 歌词面板背景 - 深蓝渐变 */}
-                                        <div className="absolute inset-4 bg-gradient-to-br from-slate-800/40 via-blue-900/30 to-indigo-900/40 backdrop-blur-xl rounded-[2rem]"></div>
-                                        <div className="absolute inset-4 bg-gradient-to-t from-slate-900/50 via-transparent to-slate-700/20 rounded-[2rem]"></div>
+                                        {/* 歌词面板背景 - 深蓝渐变 - 调整边距 */}
+                                        <div className="absolute inset-2 bg-gradient-to-br from-slate-800/40 via-blue-900/30 to-indigo-900/40 backdrop-blur-xl rounded-[2rem]"></div>
+                                        <div className="absolute inset-2 bg-gradient-to-t from-slate-900/50 via-transparent to-slate-700/20 rounded-[2rem]"></div>
 
-                                        {/* 内容区域 */}
-                                        <div className="relative w-full h-full p-8 md:p-10 flex flex-col">
-                                            <div className="flex justify-between items-center mb-6">
-                                                <h3 className="font-bold text-cyan-300 uppercase tracking-widest text-sm drop-shadow-lg" style={{textShadow: '0 0 10px rgba(34, 211, 238, 0.5)'}}>歌词</h3>
+                                        {/* 内容区域 - 减少内边距 */}
+                                        <div className="relative w-full h-full p-4 md:p-6 flex flex-col">
+                                            <div className="flex justify-end items-center mb-4">
                                                 <div className="flex gap-2">
                                                     <button
                                                         onClick={() => handleCopyLyrics(filterLyricsForDisplay(currentProject.lyrics || ""))}
@@ -544,29 +826,29 @@ export default function Home() {
                                                 </div>
                                             </div>
                                             <div className="flex-1 custom-scrollbar-auto">
-                                                <div className="text-cyan-100 text-lg md:text-xl leading-loose font-medium text-center tracking-wide"
+                                                <div className="text-cyan-100 text-base md:text-lg leading-relaxed font-medium text-center tracking-wide max-w-4xl mx-auto"
                                                      style={{
                                                          textShadow: '0 0 15px rgba(34, 211, 238, 0.3), 0 0 30px rgba(34, 211, 238, 0.1)',
                                                          filter: 'drop-shadow(0 0 5px rgba(34, 211, 238, 0.2))'
                                                      }}>
                                                     <div
-                                                        className="prose prose-lg prose-invert max-w-none"
+                                                        className="prose prose-invert max-w-none"
                                                         style={{
                                                             wordBreak: 'break-word',
                                                             overflowWrap: 'break-word',
                                                             whiteSpace: 'pre-line',
-                                                            lineHeight: '1.9',
-                                                            letterSpacing: '0.03em',
+                                                            lineHeight: '1.4',
+                                                            letterSpacing: '0.02em',
                                                             wordWrap: 'break-word',
                                                             hyphens: 'auto'
                                                         }}
                                                     >
                                                         {filterLyricsForDisplay(currentProject.lyrics || "暂无歌词").split('\n\n').map((paragraph, index) => (
-                                                            <div key={index} className="mb-8 last:mb-0">
+                                                            <div key={index} className="mb-3 last:mb-0">
                                                                 {paragraph.split('\n').map((line, lineIndex) => (
                                                                     <div
                                                                         key={lineIndex}
-                                                                        className="mb-4 last:mb-0 transition-all duration-500 hover:text-cyan-200 hover:translate-x-1 cursor-default select-text px-3 py-2 rounded-lg hover:bg-slate-600/20"
+                                                                        className="mb-2 last:mb-0 transition-all duration-500 hover:text-cyan-200 cursor-default select-text px-2 py-1 rounded-md hover:bg-slate-600/20"
                                                                         style={{
                                                                             animationDelay: `${(index * 2 + lineIndex) * 100}ms`,
                                                                             textShadow: '0 0 8px rgba(34, 211, 238, 0.4)'
@@ -623,15 +905,14 @@ export default function Home() {
                                 showLyricsPanel ? 'opacity-0 pointer-events-none' : 'opacity-100'
                             }`}>{currentProject.styleLabel}</p>
 
-                            <audio
-                                ref={el => { audioRefs.current[activeSongIndex] = el }}
-                                controls
-                                src={currentProject.songs[activeSongIndex].audioUrl}
-                                className={`w-full mb-8 transition-all duration-500 ${
-                                    showLyricsPanel ? 'opacity-0 pointer-events-none' : 'opacity-100'
-                                }`}
-                                onPlay={() => handlePlay(activeSongIndex)}
-                            />
+                            <div className={`w-full mb-8 transition-all duration-500 ${
+                                showLyricsPanel ? 'opacity-0 pointer-events-none' : 'opacity-100'
+                            }`}>
+                                <CustomAudioPlayer
+                                    src={currentProject.songs[activeSongIndex].audioUrl}
+                                    onPlay={() => handlePlay(activeSongIndex)}
+                                />
+                            </div>
 
                             <div className={`grid grid-cols-2 gap-4 w-full max-w-lg transition-all duration-500 ${
                                 showLyricsPanel ? 'opacity-0 pointer-events-none' : 'opacity-100'
@@ -689,11 +970,24 @@ export default function Home() {
         {/* === 右侧历史库 === */}
         {historyList.length > 0 && (
             <div className="w-full lg:w-80 flex flex-col gap-5 animate-in fade-in slide-in-from-right-8 duration-700">
-                <h3 className="text-sm font-black text-gray-400 uppercase tracking-widest flex items-center gap-2">
-                    <History size={16}/> History ({historyList.length})
-                </h3>
-                
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-1 gap-4">
+                <button
+                    onClick={() => setIsHistoryCollapsed(!isHistoryCollapsed)}
+                    className="text-sm font-black text-gray-400 uppercase tracking-widest flex items-center justify-between w-full group hover:text-gray-600 transition-colors"
+                >
+                    <div className="flex items-center gap-2">
+                        <History size={16}/>
+                        <span>History ({historyList.length})</span>
+                    </div>
+                    {isHistoryCollapsed ? (
+                        <ChevronDown size={16} className="transition-transform duration-200 group-hover:scale-110" />
+                    ) : (
+                        <ChevronUp size={16} className="transition-transform duration-200 group-hover:scale-110" />
+                    )}
+                </button>
+
+                <div className={`grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-1 gap-4 transition-all duration-300 ${
+                    isHistoryCollapsed ? 'max-h-0 overflow-hidden opacity-0' : 'max-h-screen opacity-100'
+                }`}>
                     {historyList.map((project) => (
                         <div 
                             key={project.id}

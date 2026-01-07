@@ -45,7 +45,7 @@ export async function POST(req: Request) {
       【输出格式】：只输出歌词正文。`;
 
       const chatCompletion = await openai.chat.completions.create({
-        model: process.env.LYRICS_MODEL || "gpt-4o",
+        model: "gemini-3-pro-preview",
         messages: [{ role: "user", content: prompt }],
         temperature: 0.7,
       });

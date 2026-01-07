@@ -275,18 +275,26 @@ export default function Home() {
 
   const handleDownload = async (url: string, title: string) => {
     try {
-      // 直接下载文件到本地，不打开新页面
-      const response = await fetch(url);
-      const blob = await response.blob();
-      const urlObj = window.URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = urlObj;
-      a.download = `${title}.mp3`;
-      a.style.display = 'none';
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      window.URL.revokeObjectURL(urlObj);
+      // 检测是否为移动设备
+      const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+
+      if (isMobile) {
+        // 移动设备：直接在新标签页打开，让浏览器处理下载
+        window.open(url, '_blank');
+      } else {
+        // 桌面设备：尝试直接下载
+        const response = await fetch(url);
+        const blob = await response.blob();
+        const urlObj = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = urlObj;
+        a.download = `${title}.mp3`;
+        a.style.display = 'none';
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        window.URL.revokeObjectURL(urlObj);
+      }
     } catch (error) {
       console.error('下载失败:', error);
       // 降级方案：直接打开链接
@@ -456,12 +464,12 @@ export default function Home() {
             {step === "completed" && currentProject && (
                 <div className="flex flex-col gap-6 animate-in slide-in-from-bottom-10">
                     <div className="bg-white rounded-[2.5rem] shadow-2xl overflow-hidden border border-white/60 relative">
-                        <div className={`relative p-8 md:p-10 flex flex-col items-center text-center transition-all duration-500 ${
-                            showLyricsPanel ? 'h-[800px] md:h-[900px]' : ''
+                        <div className={`relative p-6 md:p-10 flex flex-col items-center text-center transition-all duration-500 ${
+                            showLyricsPanel ? 'h-[1000px] md:h-[1100px]' : ''
                         }`}>
                             {/* 封面和歌词切换区域 */}
                             <div className={`relative mb-8 transition-all duration-500 ${
-                                showLyricsPanel ? 'w-full h-[600px] md:h-[700px]' : 'w-56 h-56 md:w-72 md:h-72'
+                                showLyricsPanel ? 'w-full h-[800px] md:h-[900px]' : 'w-56 h-56 md:w-72 md:h-72'
                             }`}>
                                 {/* 封面 */}
                                 <div

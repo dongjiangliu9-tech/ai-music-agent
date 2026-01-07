@@ -274,17 +274,32 @@ export default function Home() {
 
   const handleDownload = async (url: string, title: string) => {
     try {
+      // 移动设备兼容性处理
+      const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+
+      if (isMobile) {
+        // 移动设备：直接在新标签页打开，让浏览器处理下载
+        window.open(url, '_blank');
+        return;
+      }
+
+      // 桌面设备：使用blob下载
       const response = await fetch(url);
       const blob = await response.blob();
       const blobUrl = window.URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = blobUrl;
       a.download = `${title}.mp3`;
+      a.style.display = 'none';
       document.body.appendChild(a);
       a.click();
-      window.URL.revokeObjectURL(blobUrl);
       document.body.removeChild(a);
-    } catch (error) { window.open(url, '_blank'); }
+      window.URL.revokeObjectURL(blobUrl);
+    } catch (error) {
+      // 如果blob下载失败，也在新标签页打开
+      console.error('Download failed:', error);
+      window.open(url, '_blank');
+    }
   };
 
   const formatDate = (ts: number) => new Date(ts).toLocaleDateString();

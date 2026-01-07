@@ -126,23 +126,50 @@ const CustomAudioPlayer = ({ src, onPlay }: { src: string, onPlay?: () => void }
         setCurrentTime(newTime);
     };
 
-    const handleMouseDown = (e: React.MouseEvent<HTMLDivElement>) => {
+    const handleMouseDown = (e: React.MouseEvent<HTMLDivElement> | React.TouchEvent<HTMLDivElement>) => {
         e.preventDefault();
         setIsDragging(true);
-        handleProgressClick(e);
+        handleProgressClick(e as React.MouseEvent<HTMLDivElement>);
     };
 
-    const handleMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
+    const handleMouseMove = (e: React.MouseEvent<HTMLDivElement> | React.TouchEvent<HTMLDivElement>) => {
         if (!isDragging) return;
         e.preventDefault();
-        handleProgressClick(e);
+        handleProgressClick(e as React.MouseEvent<HTMLDivElement>);
     };
 
-    const handleMouseUp = (e: MouseEvent) => {
+    const handleMouseUp = (e: MouseEvent | TouchEvent) => {
         setIsDragging(false);
     };
 
-    // 添加全局鼠标事件监听
+    const handleTouchStart = (e: React.TouchEvent<HTMLDivElement>) => {
+        e.preventDefault();
+        setIsDragging(true);
+        // 模拟鼠标事件
+        const touch = e.touches[0] || e.changedTouches[0];
+        const simulatedEvent = {
+            clientX: touch.clientX,
+            preventDefault: () => {},
+        } as React.MouseEvent<HTMLDivElement>;
+        handleProgressClick(simulatedEvent);
+    };
+
+    const handleTouchMove = (e: React.TouchEvent<HTMLDivElement>) => {
+        if (!isDragging) return;
+        e.preventDefault();
+        const touch = e.touches[0] || e.changedTouches[0];
+        const simulatedEvent = {
+            clientX: touch.clientX,
+            preventDefault: () => {},
+        } as React.MouseEvent<HTMLDivElement>;
+        handleProgressClick(simulatedEvent);
+    };
+
+    const handleTouchEnd = (e: React.TouchEvent<HTMLDivElement>) => {
+        setIsDragging(false);
+    };
+
+    // 添加全局鼠标和触摸事件监听
     useEffect(() => {
         const handleGlobalMouseUp = () => setIsDragging(false);
         const handleGlobalMouseMove = (e: MouseEvent) => {
@@ -159,14 +186,35 @@ const CustomAudioPlayer = ({ src, onPlay }: { src: string, onPlay?: () => void }
             }
         };
 
+        const handleGlobalTouchEnd = () => setIsDragging(false);
+        const handleGlobalTouchMove = (e: TouchEvent) => {
+            if (isDragging && progressRef.current) {
+                e.preventDefault();
+                const touch = e.touches[0];
+                const rect = progressRef.current.getBoundingClientRect();
+                const clickX = touch.clientX - rect.left;
+                const percentage = Math.max(0, Math.min(1, clickX / rect.width));
+                const newTime = percentage * duration;
+
+                if (audioRef.current) {
+                    audioRef.current.currentTime = newTime;
+                    setCurrentTime(newTime);
+                }
+            }
+        };
+
         if (isDragging) {
             document.addEventListener('mousemove', handleGlobalMouseMove);
             document.addEventListener('mouseup', handleGlobalMouseUp);
+            document.addEventListener('touchmove', handleGlobalTouchMove, { passive: false });
+            document.addEventListener('touchend', handleGlobalTouchEnd);
         }
 
         return () => {
             document.removeEventListener('mousemove', handleGlobalMouseMove);
             document.removeEventListener('mouseup', handleGlobalMouseUp);
+            document.removeEventListener('touchmove', handleGlobalTouchMove);
+            document.removeEventListener('touchend', handleGlobalTouchEnd);
         };
     }, [isDragging, duration]);
 
@@ -186,17 +234,22 @@ const CustomAudioPlayer = ({ src, onPlay }: { src: string, onPlay?: () => void }
                 onPlay={handlePlay}
                 onPause={handlePause}
                 onEnded={() => setIsPlaying(false)}
+                controls={false}
+                style={{ display: 'none' }}
             />
 
             {/* 进度条 */}
             <div className="mb-4">
                 <div
                     ref={progressRef}
-                    className="relative h-4 bg-gray-200 rounded-full cursor-pointer overflow-hidden select-none hover:bg-gray-300 transition-colors duration-200"
+                    className="relative h-4 bg-gray-200 rounded-full cursor-pointer overflow-hidden select-none hover:bg-gray-300 transition-colors duration-200 touch-none"
                     onMouseDown={handleMouseDown}
                     onMouseMove={handleMouseMove}
                     onMouseUp={handleMouseUp}
                     onMouseLeave={handleMouseUp}
+                    onTouchStart={handleTouchStart}
+                    onTouchMove={handleTouchMove}
+                    onTouchEnd={handleTouchEnd}
                 >
                     <div
                         className="h-full bg-gradient-to-r from-purple-500 to-indigo-500 transition-all duration-100"
@@ -790,15 +843,15 @@ export default function Home() {
                                             height: '100%'
                                         } : {}}
                                     >
-                                        {/* 深蓝色玻璃效果背景 - 调整边距 */}
-                                        <div className="absolute inset-2 bg-slate-900/30 backdrop-blur-xl rounded-[2rem] border border-slate-700/50 shadow-2xl"></div>
+                                        {/* 深蓝色玻璃效果背景 - 手机端几乎全屏 */}
+                                        <div className="absolute inset-1 sm:inset-2 bg-slate-900/30 backdrop-blur-xl rounded-[1.5rem] sm:rounded-[2rem] border border-slate-700/50 shadow-2xl"></div>
 
-                                        {/* 歌词面板背景 - 深蓝渐变 - 调整边距 */}
-                                        <div className="absolute inset-2 bg-gradient-to-br from-slate-800/40 via-blue-900/30 to-indigo-900/40 backdrop-blur-xl rounded-[2rem]"></div>
-                                        <div className="absolute inset-2 bg-gradient-to-t from-slate-900/50 via-transparent to-slate-700/20 rounded-[2rem]"></div>
+                                        {/* 歌词面板背景 - 深蓝渐变 - 手机端几乎全屏 */}
+                                        <div className="absolute inset-1 sm:inset-2 bg-gradient-to-br from-slate-800/40 via-blue-900/30 to-indigo-900/40 backdrop-blur-xl rounded-[1.5rem] sm:rounded-[2rem]"></div>
+                                        <div className="absolute inset-1 sm:inset-2 bg-gradient-to-t from-slate-900/50 via-transparent to-slate-700/20 rounded-[1.5rem] sm:rounded-[2rem]"></div>
 
-                                        {/* 内容区域 - 减少内边距 */}
-                                        <div className="relative w-full h-full p-4 md:p-6 flex flex-col">
+                                        {/* 内容区域 - 手机端更大的内边距 */}
+                                        <div className="relative w-full h-full p-3 sm:p-4 md:p-6 flex flex-col">
                                             <div className="flex justify-end items-center mb-4">
                                                 <div className="flex gap-2">
                                                     <button
@@ -872,16 +925,31 @@ export default function Home() {
                                 showLyricsPanel ? 'opacity-0 pointer-events-none' : 'opacity-100'
                             }`}>
                                 {isEditingTitle ? (
-                                    <div className="flex items-center gap-2 w-full max-w-md animate-in fade-in">
-                                        <input 
+                                    <div className="flex flex-col gap-4 w-full animate-in fade-in px-4">
+                                        <input
                                             autoFocus
-                                            type="text" 
+                                            type="text"
                                             value={tempTitle}
                                             onChange={(e) => setTempTitle(e.target.value)}
-                                            className="flex-1 bg-gray-100 rounded-xl px-4 py-2 text-2xl font-black text-center outline-none border-2 border-purple-500"
+                                            className="w-full bg-gray-100 rounded-xl px-6 py-4 text-xl md:text-2xl font-black text-center outline-none border-2 border-purple-500 focus:border-purple-600 transition-colors"
+                                            placeholder="输入歌曲标题..."
                                         />
-                                        <button onClick={handleUpdateTitle} className="p-2 bg-green-500 text-white rounded-lg hover:bg-green-600"><Check size={20}/></button>
-                                        <button onClick={() => setIsEditingTitle(false)} className="p-2 bg-gray-200 text-gray-500 rounded-lg hover:bg-gray-300"><X size={20}/></button>
+                                        <div className="flex justify-center gap-4">
+                                            <button
+                                                onClick={handleUpdateTitle}
+                                                className="px-6 py-3 bg-green-500 text-white rounded-xl font-bold text-lg hover:bg-green-600 transition-colors min-w-[80px] min-h-[44px] flex items-center justify-center"
+                                            >
+                                                <Check size={20}/>
+                                                <span className="ml-2 hidden sm:inline">确定</span>
+                                            </button>
+                                            <button
+                                                onClick={() => setIsEditingTitle(false)}
+                                                className="px-6 py-3 bg-gray-200 text-gray-500 rounded-xl font-bold text-lg hover:bg-gray-300 transition-colors min-w-[80px] min-h-[44px] flex items-center justify-center"
+                                            >
+                                                <X size={20}/>
+                                                <span className="ml-2 hidden sm:inline">取消</span>
+                                            </button>
+                                        </div>
                                     </div>
                                 ) : (
                                     <div className="group flex items-center gap-2 justify-center w-full">

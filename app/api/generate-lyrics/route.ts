@@ -88,7 +88,7 @@ export async function POST(req: NextRequest) {
 
     const apiKey = process.env.LYRICS_API_KEY;
     const baseURL = process.env.LYRICS_BASE_URL;
-    const model = process.env.LYRICS_MODEL || "gemini-3-pro-preview";
+    const model = process.env.LYRICS_MODEL || "gemini-3.1-pro-preview";
     if (!apiKey) throw new Error("Missing env: LYRICS_API_KEY");
     if (!baseURL) throw new Error("Missing env: LYRICS_BASE_URL");
 

@@ -70,7 +70,7 @@ export async function POST(req: Request) {
       【输出格式】：只输出歌词正文。`;
 
       const chatCompletion = await openai.chat.completions.create({
-        model: "gemini-3-pro-preview",
+        model: "gemini-3.1-pro-preview",
         messages: [{ role: "user", content: prompt }],
         temperature: 0.7,
       });

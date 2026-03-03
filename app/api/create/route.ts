@@ -2,10 +2,35 @@
 import OpenAI from "openai";
 import { NextResponse } from "next/server";
 
+export const runtime = "nodejs";
+
 const openai = new OpenAI({
   apiKey: process.env.LYRICS_API_KEY,
   baseURL: process.env.LYRICS_BASE_URL,
 });
+
+function coerceChatContentToText(content: unknown): string {
+  if (typeof content === "string") return content;
+  if (!content) return "";
+
+  // Some OpenAI-compatible providers return an array of parts:
+  // [{ type: "text", text: "..." }, ...]
+  if (Array.isArray(content)) {
+    return content
+      .map((part: any) => {
+        if (typeof part === "string") return part;
+        if (part?.type === "text" && typeof part?.text === "string") return part.text;
+        if (typeof part?.text === "string") return part.text;
+        return "";
+      })
+      .join("");
+  }
+
+  // Fallback: some providers may wrap text differently
+  const anyContent: any = content;
+  if (typeof anyContent?.text === "string") return anyContent.text;
+  return "";
+}
 
 export async function POST(req: Request) {
   try {
@@ -50,7 +75,11 @@ export async function POST(req: Request) {
         temperature: 0.7,
       });
 
-      const lyrics = chatCompletion.choices[0].message.content || "";
+      const rawContent = chatCompletion.choices?.[0]?.message?.content ?? "";
+      const lyrics = coerceChatContentToText(rawContent).trim();
+      if (!lyrics) {
+        throw new Error("歌词生成结果为空（上游返回 content 为空或结构不兼容）");
+      }
       return NextResponse.json({ success: true, lyrics });
     }
 
@@ -87,6 +116,11 @@ export async function POST(req: Request) {
         },
         body: JSON.stringify(sunoPayload)
       });
+
+      if (!sunoRes.ok) {
+        const errText = await sunoRes.text().catch(() => "");
+        throw new Error(`Suno API 请求失败 (${sunoRes.status}): ${errText || "无错误详情"}`);
+      }
 
       const sunoData = await sunoRes.json();
       const taskId = sunoData.data?.taskId || sunoData.taskId || sunoData.data;

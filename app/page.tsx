@@ -138,7 +138,7 @@ const CustomAudioPlayer = ({ src, onPlay }: { src: string, onPlay?: () => void }
         handleProgressClick(e as React.MouseEvent<HTMLDivElement>);
     };
 
-    const handleMouseUp = (e: MouseEvent | TouchEvent) => {
+    const handleMouseUp: React.MouseEventHandler<HTMLDivElement> = () => {
         setIsDragging(false);
     };
 
@@ -358,6 +358,7 @@ export default function Home() {
       
       const res = await fetch("/api/create", {
         method: "POST",
+        headers: { "Content-Type": "application/json", "Accept": "application/json" },
         body: JSON.stringify({ 
           action: "generate_lyrics",
           topic, 
@@ -366,6 +367,10 @@ export default function Home() {
           mood: selectedMood,
         })
       });
+      if (!res.ok) {
+        const errText = await res.text().catch(() => "");
+        throw new Error(`API 请求失败 (${res.status}): ${errText || "无错误详情"}`);
+      }
       const data = await res.json();
       if (!data.success) throw new Error(data.error);
 
@@ -389,6 +394,7 @@ export default function Home() {
       
       const res = await fetch("/api/create", {
         method: "POST",
+        headers: { "Content-Type": "application/json", "Accept": "application/json" },
         body: JSON.stringify({ 
           action: "generate_music",
           topic, 
@@ -398,6 +404,10 @@ export default function Home() {
           customLyrics: finalLyrics 
         })
       });
+      if (!res.ok) {
+        const errText = await res.text().catch(() => "");
+        throw new Error(`API 请求失败 (${res.status}): ${errText || "无错误详情"}`);
+      }
       const data = await res.json();
       if (!data.success) throw new Error(data.error);
 
@@ -612,7 +622,11 @@ export default function Home() {
 
   // 检查是否支持Web Share API
   const supportsWebShare = () => {
-    return navigator.share && navigator.canShare;
+    return (
+      typeof navigator !== 'undefined' &&
+      typeof navigator.share === 'function' &&
+      typeof navigator.canShare === 'function'
+    );
   };
 
   // 移动端分享音频文件
@@ -622,7 +636,7 @@ export default function Home() {
       const blob = await response.blob();
       const file = new File([blob], `${title}.mp3`, { type: 'audio/mpeg' });
 
-      if (navigator.canShare({ files: [file] })) {
+      if (typeof navigator.canShare === 'function' && navigator.canShare({ files: [file] })) {
         await navigator.share({
           files: [file],
           title: `${title} - AI Music Studio`,

@@ -223,7 +223,7 @@ const CustomAudioPlayer = ({
     handleProgressClick(simulatedEvent);
   };
 
-  const handleTouchEnd = (e: React.TouchEvent<HTMLDivElement>) => {
+  const handleTouchEnd = () => {
     setIsDragging(false);
   };
 
@@ -774,7 +774,7 @@ export default function Home() {
       await navigator.clipboard.writeText(lyrics);
       setCopySuccess(true);
       setTimeout(() => setCopySuccess(false), 2000);
-    } catch (error) {
+    } catch {
       // Fallback for older browsers
       const textArea = document.createElement("textarea");
       textArea.value = lyrics;

@@ -19,8 +19,10 @@ SUNO_BASE_URL=https://api.sunoapi.org/api/v1
 **新配置:**
 ```env
 SUNO_API_KEY=sk-rFtZ83Ng0HI28kAf289aAf2eE33c446e8cE9F57587065741
-SUNO_BASE_URL=https://getways-jumu.zeelin.cn/v1
+SUNO_BASE_URL=https://getways-jumu.zeelin.cn
 ```
+
+**⚠️ 注意**: Base URL 不包含 `/v1`，因为代码中会拼接完整路径 `/v1/music/generations`
 
 ## API接口变更
 
@@ -28,7 +30,9 @@ SUNO_BASE_URL=https://getways-jumu.zeelin.cn/v1
 
 #### 2.1 请求URL
 - **旧**: `${sunoBaseUrl}/generate`
-- **新**: `${sunoBaseUrl}/music/generations`
+- **新**: `${sunoBaseUrl}/v1/music/generations`
+
+**注意**: Base URL 配置为 `https://getways-jumu.zeelin.cn`（不含 `/v1`），代码中拼接完整路径
 
 #### 2.2 请求体结构
 **旧payload:**
@@ -89,7 +93,7 @@ const infoRes = await fetch(
 **新接口 (POST):**
 ```typescript
 const infoRes = await fetch(
-  `${sunoBaseUrl}/music/result`,
+  `${sunoBaseUrl}/v1/music/result`,
   {
     method: "POST",
     headers: {

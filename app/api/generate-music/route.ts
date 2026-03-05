@@ -144,7 +144,7 @@ export async function POST(req: NextRequest) {
       title: finalTitle,
     };
 
-    const submitRes = await fetch(`${sunoBaseUrl}/music/generations`, {
+    const submitRes = await fetch(`${sunoBaseUrl}/v1/music/generations`, {
       method: "POST",
       headers: {
         Authorization: `Bearer ${sunoApiKey}`,
@@ -176,7 +176,7 @@ export async function POST(req: NextRequest) {
       await sleep(pollEveryMs);
 
       const infoRes = await fetch(
-        `${sunoBaseUrl}/music/result`,
+        `${sunoBaseUrl}/v1/music/result`,
         {
           method: "POST",
           headers: {

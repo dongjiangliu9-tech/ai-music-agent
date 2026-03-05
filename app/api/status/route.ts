@@ -9,7 +9,7 @@ export async function GET(req: Request) {
     return NextResponse.json({ error: "Missing taskId" }, { status: 400 });
 
   const res = await fetch(
-    `${process.env.SUNO_BASE_URL}/music/result`,
+    `${process.env.SUNO_BASE_URL}/v1/music/result`,
     {
       method: "POST",
       headers: {

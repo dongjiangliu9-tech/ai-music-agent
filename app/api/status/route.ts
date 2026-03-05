@@ -5,16 +5,20 @@ export async function GET(req: Request) {
   const { searchParams } = new URL(req.url);
   const taskId = searchParams.get("taskId");
 
-  if (!taskId) return NextResponse.json({ error: "Missing taskId" }, { status: 400 });
+  if (!taskId)
+    return NextResponse.json({ error: "Missing taskId" }, { status: 400 });
 
-  const res = await fetch(`${process.env.SUNO_BASE_URL}/generate/record-info?taskId=${taskId}`, {
-    headers: { "Authorization": `Bearer ${process.env.SUNO_API_KEY}` }
-  });
+  const res = await fetch(
+    `${process.env.SUNO_BASE_URL}/generate/record-info?taskId=${taskId}`,
+    {
+      headers: { Authorization: `Bearer ${process.env.SUNO_API_KEY}` },
+    },
+  );
 
   const data = await res.json();
-  
+
   // 兼容性处理：Suno的数据结构有时候藏得深
-  const responseData = data.data?.response || data.data || {}; 
+  const responseData = data.data?.response || data.data || {};
   const sunoData = responseData.sunoData || [];
   const status = responseData.status || data.data?.status || "PENDING";
 
@@ -25,11 +29,11 @@ export async function GET(req: Request) {
     audioUrl: item.audioUrl || item.audio_url, // API 字段有时大小写不一致，做兼容
     imageUrl: item.imageUrl || item.image_url,
     duration: item.duration,
-    model: item.model_name
+    model: item.model_name,
   }));
 
-  return NextResponse.json({ 
-    status: status === "completed" ? "SUCCESS" : status, 
-    musicList // 返回一个数组
+  return NextResponse.json({
+    status: status === "completed" ? "SUCCESS" : status,
+    musicList, // 返回一个数组
   });
 }

@@ -19,7 +19,8 @@ function coerceChatContentToText(content: unknown): string {
     return content
       .map((part: any) => {
         if (typeof part === "string") return part;
-        if (part?.type === "text" && typeof part?.text === "string") return part.text;
+        if (part?.type === "text" && typeof part?.text === "string")
+          return part.text;
         if (typeof part?.text === "string") return part.text;
         return "";
       })
@@ -36,13 +37,22 @@ export async function POST(req: Request) {
   try {
     const body = await req.json();
     // 【修改】新增 customTitle 参数
-    const { action, topic, customTitle, styleLabel, styleTags, mood, isInstrumental, customLyrics } = body;
+    const {
+      action,
+      topic,
+      customTitle,
+      styleLabel,
+      styleTags,
+      mood,
+      isInstrumental,
+      customLyrics,
+    } = body;
 
     // 1. 生成歌词模式
     if (action === "generate_lyrics") {
       // ... (此处保持之前的歌词生成代码不变，省略以节省空间) ...
       // 请保留原有的 prompt 和 openai 调用逻辑
-      
+
       const prompt = `你是一位世界顶级的音乐制作人和作词人。请根据用户提供的主题，创作一首完整的歌词。
       【用户输入主题】：${topic}
       【音乐风格】：${styleLabel}
@@ -78,7 +88,9 @@ export async function POST(req: Request) {
       const rawContent = chatCompletion.choices?.[0]?.message?.content ?? "";
       const lyrics = coerceChatContentToText(rawContent).trim();
       if (!lyrics) {
-        throw new Error("歌词生成结果为空（上游返回 content 为空或结构不兼容）");
+        throw new Error(
+          "歌词生成结果为空（上游返回 content 为空或结构不兼容）",
+        );
       }
       return NextResponse.json({ success: true, lyrics });
     }
@@ -89,7 +101,7 @@ export async function POST(req: Request) {
 
       let finalPrompt = "";
       if (isInstrumental) {
-        finalPrompt = topic; 
+        finalPrompt = topic;
       } else {
         finalPrompt = customLyrics;
       }
@@ -105,21 +117,23 @@ export async function POST(req: Request) {
         model: "V5",
         customMode: true,
         instrumental: isInstrumental,
-        callBackUrl: "https://www.google.com"
+        callBackUrl: "https://www.google.com",
       };
 
       const sunoRes = await fetch(`${process.env.SUNO_BASE_URL}/generate`, {
         method: "POST",
         headers: {
-          "Authorization": `Bearer ${process.env.SUNO_API_KEY}`,
-          "Content-Type": "application/json"
+          Authorization: `Bearer ${process.env.SUNO_API_KEY}`,
+          "Content-Type": "application/json",
         },
-        body: JSON.stringify(sunoPayload)
+        body: JSON.stringify(sunoPayload),
       });
 
       if (!sunoRes.ok) {
         const errText = await sunoRes.text().catch(() => "");
-        throw new Error(`Suno API 请求失败 (${sunoRes.status}): ${errText || "无错误详情"}`);
+        throw new Error(
+          `Suno API 请求失败 (${sunoRes.status}): ${errText || "无错误详情"}`,
+        );
       }
 
       const sunoData = await sunoRes.json();
@@ -131,9 +145,11 @@ export async function POST(req: Request) {
     }
 
     return NextResponse.json({ error: "Invalid action" }, { status: 400 });
-
   } catch (error: any) {
     console.error("Error:", error);
-    return NextResponse.json({ success: false, error: error.message }, { status: 500 });
+    return NextResponse.json(
+      { success: false, error: error.message },
+      { status: 500 },
+    );
   }
 }

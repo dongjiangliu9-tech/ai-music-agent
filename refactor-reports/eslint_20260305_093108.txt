@@ -1,0 +1,37 @@
+
+/Users/ldjmac/Projects2/ai-music-agent/app/api/create/route.ts
+   20:19  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+   30:21  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  135:19  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+/Users/ldjmac/Projects2/ai-music-agent/app/api/generate-lyrics/route.ts
+   21:19  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+   30:21  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+   35:44  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  150:61  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+/Users/ldjmac/Projects2/ai-music-agent/app/api/generate-music/route.ts
+   33:40  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+   45:17  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+   73:51  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  147:24  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  195:37  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+/Users/ldjmac/Projects2/ai-music-agent/app/api/status/route.ts
+  22:41  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+/Users/ldjmac/Projects2/ai-music-agent/app/page.tsx
+    15:60  error    Unexpected any. Specify a different type                                                                                                                                                                                                                                                 @typescript-eslint/no-explicit-any
+    17:42  error    Unexpected any. Specify a different type                                                                                                                                                                                                                                                 @typescript-eslint/no-explicit-any
+    46:30  error    Unexpected any. Specify a different type                                                                                                                                                                                                                                                 @typescript-eslint/no-explicit-any
+   168:29  warning  'e' is defined but never used                                                                                                                                                                                                                                                            @typescript-eslint/no-unused-vars
+   379:17  error    Unexpected any. Specify a different type                                                                                                                                                                                                                                                 @typescript-eslint/no-explicit-any
+   417:17  error    Unexpected any. Specify a different type                                                                                                                                                                                                                                                 @typescript-eslint/no-explicit-any
+   435:57  error    Unexpected any. Specify a different type                                                                                                                                                                                                                                                 @typescript-eslint/no-explicit-any
+   665:14  warning  'error' is defined but never used                                                                                                                                                                                                                                                        @typescript-eslint/no-unused-vars
+   831:37  warning  Using `<img>` could result in slower LCP and higher bandwidth. Consider using `<Image />` from `next/image` or a custom image loader to automatically optimize images. This may incur additional usage or cost from your provider. See: https://nextjs.org/docs/messages/no-img-element  @next/next/no-img-element
+  1081:33  warning  Using `<img>` could result in slower LCP and higher bandwidth. Consider using `<Image />` from `next/image` or a custom image loader to automatically optimize images. This may incur additional usage or cost from your provider. See: https://nextjs.org/docs/messages/no-img-element  @next/next/no-img-element
+  1081:33  warning  img elements must have an alt prop, either with meaningful text, or an empty string for decorative images                                                                                                                                                                                jsx-a11y/alt-text
+
+✖ 24 problems (19 errors, 5 warnings)
+

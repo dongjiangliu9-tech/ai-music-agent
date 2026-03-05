@@ -135,16 +135,16 @@ export async function POST(req: NextRequest) {
     const prompt = instrumental ? creativeIdea : lyrics;
 
     const sunoPayload = {
-      prompt,
-      style: styleString,
-      title: finalTitle,
-      model: "V5",
+      model: "suno-v5",
       customMode: true,
       instrumental,
       callBackUrl: "https://www.google.com",
+      prompt,
+      style: styleString,
+      title: finalTitle,
     };
 
-    const submitRes = await fetch(`${sunoBaseUrl}/generate`, {
+    const submitRes = await fetch(`${sunoBaseUrl}/music/generations`, {
       method: "POST",
       headers: {
         Authorization: `Bearer ${sunoApiKey}`,
@@ -161,8 +161,7 @@ export async function POST(req: NextRequest) {
     }
 
     const submitData = await submitRes.json();
-    const taskId =
-      submitData?.data?.taskId || submitData?.taskId || submitData?.data;
+    const taskId = submitData?.task_id || submitData?.data?.taskId || submitData?.taskId;
     if (!taskId) throw new Error("Suno API 未返回 Task ID");
 
     // 尽量“一次请求拿到 songs”，但要考虑 Vercel 超时：最长轮询 55s
@@ -177,9 +176,17 @@ export async function POST(req: NextRequest) {
       await sleep(pollEveryMs);
 
       const infoRes = await fetch(
-        `${sunoBaseUrl}/generate/record-info?taskId=${encodeURIComponent(String(taskId))}`,
+        `${sunoBaseUrl}/music/result`,
         {
-          headers: { Authorization: `Bearer ${sunoApiKey}` },
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${sunoApiKey}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            task_id: String(taskId),
+            model: "suno-v5",
+          }),
           cache: "no-store",
         },
       );

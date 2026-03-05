@@ -9,31 +9,39 @@ export async function GET(req: Request) {
     return NextResponse.json({ error: "Missing taskId" }, { status: 400 });
 
   const res = await fetch(
-    `${process.env.SUNO_BASE_URL}/generate/record-info?taskId=${taskId}`,
+    `${process.env.SUNO_BASE_URL}/music/result`,
     {
-      headers: { Authorization: `Bearer ${process.env.SUNO_API_KEY}` },
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${process.env.SUNO_API_KEY}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        task_id: taskId,
+        model: "suno-v5",
+      }),
     },
   );
 
   const data = await res.json();
 
-  // 兼容性处理：Suno的数据结构有时候藏得深
+  // 兼容ZeeLin网关的数据结构
   const responseData = data.data?.response || data.data || {};
   const sunoData = responseData.sunoData || [];
   const status = responseData.status || data.data?.status || "PENDING";
 
-  // 【核心修改】映射所有生成的歌曲，而不仅仅是第一首
+  // 映射所有生成的歌曲
   const musicList = sunoData.map((item: any) => ({
     id: item.id,
     title: item.title || "Untitled",
-    audioUrl: item.audioUrl || item.audio_url, // API 字段有时大小写不一致，做兼容
+    audioUrl: item.audioUrl || item.audio_url,
     imageUrl: item.imageUrl || item.image_url,
     duration: item.duration,
-    model: item.model_name,
+    model: item.modelName || item.model_name,
   }));
 
   return NextResponse.json({
     status: status === "completed" ? "SUCCESS" : status,
-    musicList, // 返回一个数组
+    musicList,
   });
 }

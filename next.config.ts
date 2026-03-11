@@ -9,6 +9,20 @@ const nextConfig: NextConfig = {
   turbopack: {
     root: projectRoot,
   },
+  // 强制所有 API 路由返回 UTF-8 编码，修复 Windows 客户端乱码问题
+  async headers() {
+    return [
+      {
+        source: "/api/:path*",
+        headers: [
+          {
+            key: "Content-Type",
+            value: "application/json; charset=utf-8",
+          },
+        ],
+      },
+    ];
+  },
 };
 
 export default nextConfig;

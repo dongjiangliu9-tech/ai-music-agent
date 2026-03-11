@@ -9,6 +9,8 @@ function withCors(res: NextResponse) {
   res.headers.set("Access-Control-Allow-Methods", "POST, OPTIONS");
   res.headers.set("Access-Control-Allow-Headers", "Content-Type, Authorization");
   res.headers.set("Access-Control-Max-Age", "86400");
+  // 强制 UTF-8，防止 Windows/代理层错误解析中文编码
+  res.headers.set("Content-Type", "application/json; charset=utf-8");
   return res;
 }
 

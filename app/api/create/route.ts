@@ -35,7 +35,7 @@ export async function POST(req: Request) {
     const body = await req.json();
     const { action, topic, customTitle, styleLabel, styleTags, mood, isInstrumental, customLyrics } = body;
 
-    // ─── 1. 生成歌词（不需要扣费）───────────────────────────────
+    // ─── 1. 生成歌词（免费，不扣额度）──────────────────────────
     if (action === "generate_lyrics") {
       const prompt = `你是一位世界顶级的音乐制作人和作词人。请根据用户提供的主题，创作一首完整的歌词。
       【用户输入主题】：${topic}
@@ -71,16 +71,15 @@ export async function POST(req: Request) {
 
       const rawContent = chatCompletion.choices?.[0]?.message?.content ?? "";
       const lyrics = coerceChatContentToText(rawContent).trim();
-      if (!lyrics) throw new Error("歌词生成结果为空（上游返回 content 为空或结构不兼容）");
+      if (!lyrics) throw new Error("歌词生成结果为空");
       return NextResponse.json({ success: true, lyrics });
     }
 
-    // ─── 2. 生成音乐（需要智灵余额校验 + 扣费）─────────────────
+    // ─── 2. 生成音乐（消耗 200 额度）───────────────────────────
     if (action === "generate_music") {
       const finalTitle = (customTitle || topic || "Untitled").slice(0, 90);
-      console.log(`🎵 提交作曲: [${finalTitle}]`);
 
-      // ── 验证用户 app-key ──────────────────────────────────────
+      // 用户自己的 App-Key（必须）
       const userAppKey = typeof body.zeelin_app_key === "string" ? body.zeelin_app_key.trim() : "";
       if (!userAppKey) {
         return NextResponse.json(
@@ -89,33 +88,28 @@ export async function POST(req: Request) {
         );
       }
 
-      // ── 第一步：智灵余额校验（用用户自己的 key）──────────────
-      const zeelinQuery = `生成AI音乐: ${finalTitle}`;
+      // ── 第一步：智灵余额校验 ──────────────────────────────────
       let preOrderId: string;
       let remainCalls: number;
-
-      // 临时替换环境变量为用户的 key
-      const originalKey = process.env.ZEELIN_APP_KEY;
-      process.env.ZEELIN_APP_KEY = userAppKey;
-
       try {
-        const zeelinResult = await checkZeelinBalance(zeelinQuery);
-        preOrderId = zeelinResult.pre_order_id;
-        remainCalls = zeelinResult.remain_calls;
-        console.log(`✅ 智灵余额校验通过，剩余额度: ${remainCalls}，预订单: ${preOrderId}`);
+        const result = await checkZeelinBalance(userAppKey, `生成AI音乐: ${finalTitle}`);
+        preOrderId = result.pre_order_id;
+        remainCalls = result.remain_calls;
+        console.log(`✅ 智灵校验通过，剩余: ${remainCalls}，预订单: ${preOrderId}`);
       } catch (err) {
-        process.env.ZEELIN_APP_KEY = originalKey; // 恢复
         const msg = (err as Error).message;
-        console.error("❌ 智灵余额校验失败:", msg);
-        const status = msg.includes("余额不足") ? 402 : 503;
+        console.error("❌ 智灵校验失败:", msg);
+        const status = msg.includes("余额不足") || msg.includes("Key 无效") ? 402 : 503;
         return NextResponse.json({ success: false, error: msg }, { status });
       }
 
-      // ── 第二步：提交 Suno 作曲任务 ───────────────────────────
-      const finalPrompt = isInstrumental ? topic : customLyrics;
+      // ── 第二步：提交 Suno 任务 ────────────────────────────────
+      const sunoBaseUrl = process.env.SUNO_BASE_URL;
+      const sunoApiKey = process.env.SUNO_API_KEY;
+      if (!sunoBaseUrl || !sunoApiKey) throw new Error("Missing Suno env config");
 
       const sunoPayload = {
-        prompt: finalPrompt,
+        prompt: isInstrumental ? topic : customLyrics,
         style: styleTags,
         title: finalTitle,
         model: "suno-v5",
@@ -124,78 +118,63 @@ export async function POST(req: Request) {
         callBackUrl: "https://www.google.com",
       };
 
-      const sunoRes = await fetch(`${process.env.SUNO_BASE_URL}/v1/music/generations`, {
+      const sunoRes = await fetch(`${sunoBaseUrl}/v1/music/generations`, {
         method: "POST",
-        headers: {
-          Authorization: `Bearer ${process.env.SUNO_API_KEY}`,
-          "Content-Type": "application/json",
-        },
+        headers: { Authorization: `Bearer ${sunoApiKey}`, "Content-Type": "application/json" },
         body: JSON.stringify(sunoPayload),
       });
 
       if (!sunoRes.ok) {
-        process.env.ZEELIN_APP_KEY = originalKey; // 恢复
         const errText = await sunoRes.text().catch(() => "");
-        throw new Error(`Suno API 请求失败 (${sunoRes.status}): ${errText || "无错误详情"}`);
+        // Suno 提交失败 → 不扣费
+        throw new Error(`Suno 请求失败 (${sunoRes.status}): ${errText}`);
       }
 
       const sunoData = await sunoRes.json();
       const taskId = sunoData.task_id;
-      if (!taskId) {
-        process.env.ZEELIN_APP_KEY = originalKey;
-        throw new Error("Suno API 未返回 Task ID");
-      }
+      if (!taskId) throw new Error("Suno 未返回 task_id");
 
-      // ── 第三步：轮询等待完成（最多 55 秒）───────────────────
+      console.log(`🎵 Suno 任务已提交: ${taskId}`);
+
+      // ── 第三步：轮询（最多 55 秒，超时交给前端继续轮询）──────
       const startedAt = Date.now();
-      const maxWaitMs = 55_000;
-      const pollEveryMs = 4_000;
       let musicDone = false;
 
-      while (Date.now() - startedAt < maxWaitMs) {
-        await sleep(pollEveryMs);
+      while (Date.now() - startedAt < 55_000) {
+        await sleep(4_000);
         try {
-          const statusRes = await fetch(`${process.env.SUNO_BASE_URL}/v1/music/result`, {
+          const statusRes = await fetch(`${sunoBaseUrl}/v1/music/result`, {
             method: "POST",
-            headers: {
-              Authorization: `Bearer ${process.env.SUNO_API_KEY}`,
-              "Content-Type": "application/json",
-            },
+            headers: { Authorization: `Bearer ${sunoApiKey}`, "Content-Type": "application/json" },
             body: JSON.stringify({ model: "suno-v5", task_id: taskId }),
           });
           if (!statusRes.ok) continue;
-          const statusData = await statusRes.json();
-          const responseData = statusData?.data?.response || statusData?.data || {};
-          const status = responseData?.status || statusData?.data?.status || "PENDING";
-          if (status === "SUCCESS" || status === "FIRST_SUCCESS") { musicDone = true; break; }
-          if (["CREATE_TASK_FAILED", "GENERATE_AUDIO_FAILED", "CALLBACK_EXCEPTION", "SENSITIVE_WORD_ERROR"].includes(status)) break;
-        } catch (pollErr) {
-          console.error("轮询状态异常:", (pollErr as Error).message);
-        }
+          const sd = await statusRes.json();
+          const status = sd?.data?.status || sd?.status || "processing";
+          if (status === "SUCCESS" || status === "completed") { musicDone = true; break; }
+          if (["FAILED", "error", "CREATE_TASK_FAILED", "GENERATE_AUDIO_FAILED"].includes(status)) break;
+        } catch { /* 继续轮询 */ }
       }
 
-      // ── 第四步：成功才扣费 ────────────────────────────────────
+      // ── 第四步：成功则立即扣费，超时则把 pre_order_id 交给前端 ─
       if (musicDone) {
         try {
-          const deductResult = await deductZeelinBalance(preOrderId, ZEELIN_COST_PER_GENERATION);
-          console.log(`💰 智灵扣费成功，扣除 ${deductResult.cost_balance} 额度，剩余 ${deductResult.remain_calls}`);
-        } catch (deductErr) {
-          console.error("⚠️ 智灵扣费失败（音乐已生成）:", (deductErr as Error).message);
+          const deduct = await deductZeelinBalance(userAppKey, preOrderId, ZEELIN_COST_PER_GENERATION);
+          console.log(`💰 扣费成功，扣 ${deduct.cost_balance}，剩余 ${deduct.remain_calls}`);
+        } catch (e) {
+          console.error("⚠️ 扣费失败（音乐已生成）:", (e as Error).message);
         }
+        return NextResponse.json({ success: true, taskId });
       } else {
-        console.log("⏳ 音乐生成未在本次请求内完成，跳过扣费，等待前端轮询确认后扣费");
+        // 超时：把 pre_order_id 和 appKey 哈希返回，前端轮询到成功后调 /api/zeelin-confirm
+        console.log(`⏳ 超时，taskId=${taskId}，交前端轮询`);
+        return NextResponse.json({
+          success: true,
+          taskId,
+          zeelin_pre_order_id: preOrderId,
+          // 注意：appKey 不回传给前端（前端自己存着），此字段仅内部标记
+        });
       }
-
-      // 恢复原始 key
-      process.env.ZEELIN_APP_KEY = originalKey;
-
-      // 把 taskId 和 pre_order_id（超时时用）返回给前端
-      return NextResponse.json({
-        success: true,
-        taskId,
-        // 超时未完成时带回 pre_order_id，前端轮询完成后调 /api/zeelin-confirm 扣费
-        ...(musicDone ? {} : { zeelin_pre_order_id: preOrderId, zeelin_app_key: userAppKey }),
-      });
     }
 
     return NextResponse.json({ error: "Invalid action" }, { status: 400 });

@@ -3,19 +3,18 @@
  * 文档：https://skills.zeelin.cn
  *
  * 流程：
- * 1. 调用 checkBalance() 验证余额、获取 pre_order_id
- * 2. 执行 skill 功能逻辑
- * 3. 成功 → 调用 deductBalance(pre_order_id, cost)
- *    失败 → 跳过扣费，抛出异常
+ * 1. checkZeelinBalance(appKey, query) → 获取 pre_order_id
+ * 2. 执行 skill 功能
+ * 3. 成功 → deductZeelinBalance(appKey, preOrderId, cost)
+ *    失败 → 跳过扣费
  */
 
 const ZEELIN_BASE_URL = "https://skills.zeelin.cn";
-const ZEELIN_APP_KEY = process.env.ZEELIN_APP_KEY || "";
-const ZEELIN_SKILL_ID = process.env.ZEELIN_SKILL_ID || "";
+const ZEELIN_SKILL_ID = process.env.ZEELIN_SKILL_ID || "zeelin_ParDdTaM9W81iKiRZndwSCXW0";
 
-// 每次生成音乐扣减的额度（根据实际情况调整）
+// 每次生成音乐扣减的额度
 export const ZEELIN_COST_PER_GENERATION = parseInt(
-  process.env.ZEELIN_COST_PER_GENERATION || "2",
+  process.env.ZEELIN_COST_PER_GENERATION || "200",
   10
 );
 
@@ -25,17 +24,13 @@ export interface ZeelinCheckResult {
   skill_id: string;
 }
 
-/**
- * 记录调用日志（用于审计）
- */
+/** 记录调用日志（用于审计） */
 function logZeelin(action: string, data: Record<string, unknown>) {
   const ts = new Date().toISOString();
   console.log(`[ZeeLin][${ts}][${action}]`, JSON.stringify(data));
 }
 
-/**
- * 带重试的 fetch 封装（默认重试 3 次）
- */
+/** 带重试的 fetch（默认最多 3 次） */
 async function fetchWithRetry(
   url: string,
   options: RequestInit,
@@ -45,69 +40,67 @@ async function fetchWithRetry(
   let lastError: Error | null = null;
   for (let i = 0; i < retries; i++) {
     try {
-      const res = await fetch(url, options);
-      return res;
+      return await fetch(url, options);
     } catch (err) {
       lastError = err as Error;
       logZeelin("RETRY", { url, attempt: i + 1, error: (err as Error).message });
-      if (i < retries - 1) {
-        await new Promise((r) => setTimeout(r, delayMs * (i + 1)));
-      }
+      if (i < retries - 1) await new Promise((r) => setTimeout(r, delayMs * (i + 1)));
     }
   }
   throw lastError || new Error("fetchWithRetry failed");
 }
 
 /**
- * 第一步：额度校验
- * 返回 pre_order_id（2小时内有效）和剩余额度
+ * 第一步：余额校验
+ * @param appKey 用户自己的智灵 App-Key
+ * @param query  本次调用描述（用于订单日志）
  */
-export async function checkZeelinBalance(query: string): Promise<ZeelinCheckResult> {
-  if (!ZEELIN_APP_KEY) throw new Error("Missing env: ZEELIN_APP_KEY");
+export async function checkZeelinBalance(
+  appKey: string,
+  query: string
+): Promise<ZeelinCheckResult> {
+  if (!appKey) throw new Error("请提供智灵 App-Key，前往 https://skills.zeelin.cn 注册获取");
   if (!ZEELIN_SKILL_ID) throw new Error("Missing env: ZEELIN_SKILL_ID");
-
-  const payload = {
-    query,
-    "skill-id": ZEELIN_SKILL_ID,
-  };
 
   logZeelin("CHECK_BALANCE_REQUEST", { skill_id: ZEELIN_SKILL_ID, query });
 
-  let res: Response;
-  try {
-    res = await fetchWithRetry(
-      `${ZEELIN_BASE_URL}/v2/api/skill/detail`,
-      {
-        method: "POST",
-        headers: {
-          "app-key": ZEELIN_APP_KEY,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(payload),
+  const res = await fetchWithRetry(
+    `${ZEELIN_BASE_URL}/v2/api/skill/detail`,
+    {
+      method: "POST",
+      headers: {
+        "app-key": appKey,
+        "Content-Type": "application/json",
       },
-      3
-    );
-  } catch (err) {
-    logZeelin("CHECK_BALANCE_NETWORK_ERROR", { error: (err as Error).message });
-    throw new Error(`智灵余额校验网络错误: ${(err as Error).message}`);
-  }
+      body: JSON.stringify({ query, "skill-id": ZEELIN_SKILL_ID }),
+    }
+  );
 
   let data: any;
-  try {
-    data = await res.json();
-  } catch {
-    logZeelin("CHECK_BALANCE_PARSE_ERROR", { status: res.status });
+  try { data = await res.json(); } catch {
     throw new Error("智灵余额校验接口返回格式异常");
   }
 
-  logZeelin("CHECK_BALANCE_RESPONSE", { status: res.status, code: data?.code, message: data?.message });
+  logZeelin("CHECK_BALANCE_RESPONSE", {
+    status: res.status, code: data?.code, message: data?.message,
+    remain_calls: data?.data?.remain_calls,
+  });
 
   if (data?.code === 402) {
-    throw new Error("智灵账户余额不足，请前往 https://skills.zeelin.cn 充值后再使用");
+    throw new Error(`智灵账户余额不足（剩余 ${data?.data?.remain_calls ?? 0} 额度），请前往 https://skills.zeelin.cn 充值`);
   }
-
+  if (data?.code === 404) {
+    throw new Error("智灵 App-Key 无效，请前往 https://skills.zeelin.cn/console/apps 确认");
+  }
   if (data?.code !== 200 || !data?.data?.pre_order_id) {
     throw new Error(`智灵余额校验失败: ${data?.message || "未知错误"} (code: ${data?.code})`);
+  }
+
+  // 余额低于单次消耗时也提前拦截
+  if ((data.data.remain_calls ?? 0) < ZEELIN_COST_PER_GENERATION) {
+    throw new Error(
+      `智灵账户余额不足（剩余 ${data.data.remain_calls} 额度，生成一首歌需要 ${ZEELIN_COST_PER_GENERATION} 额度），请前往 https://skills.zeelin.cn 充值`
+    );
   }
 
   return {
@@ -119,53 +112,43 @@ export async function checkZeelinBalance(query: string): Promise<ZeelinCheckResu
 
 /**
  * 第三步：扣减额度（在 skill 功能成功完成后调用）
+ * @param appKey     用户自己的智灵 App-Key
+ * @param preOrderId checkZeelinBalance 返回的预订单 ID
+ * @param cost       扣减额度，默认 ZEELIN_COST_PER_GENERATION
  */
 export async function deductZeelinBalance(
+  appKey: string,
   preOrderId: string,
-  costBalance: number = ZEELIN_COST_PER_GENERATION
+  cost: number = ZEELIN_COST_PER_GENERATION
 ): Promise<{ order_id: string; cost_balance: number; remain_calls: number }> {
-  if (!ZEELIN_APP_KEY) throw new Error("Missing env: ZEELIN_APP_KEY");
+  if (!appKey) throw new Error("缺少智灵 App-Key");
   if (!ZEELIN_SKILL_ID) throw new Error("Missing env: ZEELIN_SKILL_ID");
 
-  const payload = {
-    "order-id": preOrderId,
-    "cost-balance": costBalance,
-    "skill-id": ZEELIN_SKILL_ID,
-  };
+  logZeelin("DEDUCT_REQUEST", { pre_order_id: preOrderId, cost_balance: cost });
 
-  logZeelin("DEDUCT_REQUEST", { pre_order_id: preOrderId, cost_balance: costBalance });
-
-  let res: Response;
-  try {
-    res = await fetchWithRetry(
-      `${ZEELIN_BASE_URL}/v2/api/skill/cost`,
-      {
-        method: "POST",
-        headers: {
-          "app-key": ZEELIN_APP_KEY,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(payload),
+  const res = await fetchWithRetry(
+    `${ZEELIN_BASE_URL}/v2/api/skill/cost`,
+    {
+      method: "POST",
+      headers: {
+        "app-key": appKey,
+        "Content-Type": "application/json",
       },
-      3
-    );
-  } catch (err) {
-    logZeelin("DEDUCT_NETWORK_ERROR", { error: (err as Error).message, pre_order_id: preOrderId });
-    throw new Error(`智灵扣费网络错误: ${(err as Error).message}`);
-  }
+      body: JSON.stringify({
+        "order-id": preOrderId,
+        "cost-balance": cost,
+        "skill-id": ZEELIN_SKILL_ID,
+      }),
+    }
+  );
 
   let data: any;
-  try {
-    data = await res.json();
-  } catch {
-    logZeelin("DEDUCT_PARSE_ERROR", { status: res.status });
+  try { data = await res.json(); } catch {
     throw new Error("智灵扣费接口返回格式异常");
   }
 
   logZeelin("DEDUCT_RESPONSE", {
-    status: res.status,
-    code: data?.code,
-    message: data?.message,
+    status: res.status, code: data?.code, message: data?.message,
     order_id: data?.data?.order_id,
     cost_balance: data?.data?.cost_balance,
     remain_calls: data?.data?.remain_calls,

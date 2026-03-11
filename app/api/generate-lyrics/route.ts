@@ -7,10 +7,7 @@ export const dynamic = "force-dynamic";
 function withCors(res: NextResponse) {
   res.headers.set("Access-Control-Allow-Origin", "*");
   res.headers.set("Access-Control-Allow-Methods", "POST, OPTIONS");
-  res.headers.set(
-    "Access-Control-Allow-Headers",
-    "Content-Type, Authorization",
-  );
+  res.headers.set("Access-Control-Allow-Headers", "Content-Type, Authorization");
   res.headers.set("Access-Control-Max-Age", "86400");
   return res;
 }
@@ -23,8 +20,7 @@ function coerceChatContentToText(content: unknown): string {
     return content
       .map((part: any) => {
         if (typeof part === "string") return part;
-        if (part?.type === "text" && typeof part?.text === "string")
-          return part.text;
+        if (part?.type === "text" && typeof part?.text === "string") return part.text;
         if (typeof part?.text === "string") return part.text;
         return "";
       })
@@ -59,31 +55,22 @@ export function OPTIONS() {
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json().catch(() => ({}));
-    const creativeIdea = isTruthyString(body?.creativeIdea)
-      ? body.creativeIdea.trim()
-      : "";
-    const musicStyle = isTruthyString(body?.musicStyle)
-      ? body.musicStyle.trim()
-      : "";
-    const emotionalStyle = isTruthyString(body?.emotionalStyle)
-      ? body.emotionalStyle.trim()
-      : "";
-    const vocalMode = isTruthyString(body?.vocalMode)
-      ? body.vocalMode.trim()
-      : "人声";
+    const creativeIdea = isTruthyString(body?.creativeIdea) ? body.creativeIdea.trim() : "";
+    const musicStyle = isTruthyString(body?.musicStyle) ? body.musicStyle.trim() : "";
+    const emotionalStyle = isTruthyString(body?.emotionalStyle) ? body.emotionalStyle.trim() : "";
+    const vocalMode = isTruthyString(body?.vocalMode) ? body.vocalMode.trim() : "人声";
 
     if (!creativeIdea) {
       return withCors(
         NextResponse.json(
           { success: false, error: "Missing creativeIdea" },
-          { status: 400 },
-        ),
+          { status: 400 }
+        )
       );
     }
 
     const instrumental =
-      /纯音乐|伴奏|instrumental/i.test(vocalMode) ||
-      /no\s*vocals/i.test(vocalMode);
+      /纯音乐|伴奏|instrumental/i.test(vocalMode) || /no\s*vocals/i.test(vocalMode);
 
     // 纯音乐模式不需要歌词，仍然返回稳定字段结构
     if (instrumental) {
@@ -95,7 +82,7 @@ export async function POST(req: NextRequest) {
           lyrics: "",
           title,
           tags,
-        }),
+        })
       );
     }
 
@@ -158,18 +145,10 @@ export async function POST(req: NextRequest) {
 
     if (parsed && typeof parsed === "object") {
       const lyrics = isTruthyString(parsed.lyrics) ? parsed.lyrics.trim() : "";
-      const title = isTruthyString(parsed.title)
-        ? parsed.title.trim().slice(0, 90)
-        : titleFromInput;
+      const title = isTruthyString(parsed.title) ? parsed.title.trim().slice(0, 90) : titleFromInput;
       const tags =
-        Array.isArray(parsed.tags) &&
-        parsed.tags.every((t: any) => typeof t === "string")
-          ? Array.from(
-              new Set([
-                ...baseTags,
-                ...parsed.tags.map((t: string) => t.trim()).filter(Boolean),
-              ]),
-            )
+        Array.isArray(parsed.tags) && parsed.tags.every((t: any) => typeof t === "string")
+          ? Array.from(new Set([...baseTags, ...parsed.tags.map((t: string) => t.trim()).filter(Boolean)]))
           : baseTags;
 
       if (!lyrics) throw new Error("Lyrics generation returned empty lyrics");
@@ -180,7 +159,7 @@ export async function POST(req: NextRequest) {
           lyrics,
           title,
           tags,
-        }),
+        })
       );
     }
 
@@ -191,12 +170,12 @@ export async function POST(req: NextRequest) {
         lyrics: text,
         title: titleFromInput,
         tags: baseTags,
-      }),
+      })
     );
   } catch (e) {
     const message = (e as Error)?.message || "Unknown error";
     return withCors(
-      NextResponse.json({ success: false, error: message }, { status: 500 }),
+      NextResponse.json({ success: false, error: message }, { status: 500 })
     );
   }
 }

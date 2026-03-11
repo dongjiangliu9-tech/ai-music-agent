@@ -1,6 +1,7 @@
 // app/api/create/route.ts
 import OpenAI from "openai";
 import { NextResponse } from "next/server";
+import { checkZeelinBalance, deductZeelinBalance, ZEELIN_COST_PER_GENERATION } from "@/app/lib/zeelin";
 
 export const runtime = "nodejs";
 
@@ -13,46 +14,33 @@ function coerceChatContentToText(content: unknown): string {
   if (typeof content === "string") return content;
   if (!content) return "";
 
-  // Some OpenAI-compatible providers return an array of parts:
-  // [{ type: "text", text: "..." }, ...]
   if (Array.isArray(content)) {
     return content
       .map((part: any) => {
         if (typeof part === "string") return part;
-        if (part?.type === "text" && typeof part?.text === "string")
-          return part.text;
+        if (part?.type === "text" && typeof part?.text === "string") return part.text;
         if (typeof part?.text === "string") return part.text;
         return "";
       })
       .join("");
   }
 
-  // Fallback: some providers may wrap text differently
   const anyContent: any = content;
   if (typeof anyContent?.text === "string") return anyContent.text;
   return "";
 }
 
+function sleep(ms: number) {
+  return new Promise((r) => setTimeout(r, ms));
+}
+
 export async function POST(req: Request) {
   try {
     const body = await req.json();
-    // 【修改】新增 customTitle 参数
-    const {
-      action,
-      topic,
-      customTitle,
-      styleLabel,
-      styleTags,
-      mood,
-      isInstrumental,
-      customLyrics,
-    } = body;
+    const { action, topic, customTitle, styleLabel, styleTags, mood, isInstrumental, customLyrics } = body;
 
-    // 1. 生成歌词模式
+    // ─── 1. 生成歌词（不需要扣费）───────────────────────────────
     if (action === "generate_lyrics") {
-      // ... (此处保持之前的歌词生成代码不变，省略以节省空间) ...
-      // 请保留原有的 prompt 和 openai 调用逻辑
-
       const prompt = `你是一位世界顶级的音乐制作人和作词人。请根据用户提供的主题，创作一首完整的歌词。
       【用户输入主题】：${topic}
       【音乐风格】：${styleLabel}
@@ -80,7 +68,7 @@ export async function POST(req: Request) {
       【输出格式】：只输出歌词正文。`;
 
       const chatCompletion = await openai.chat.completions.create({
-        model: "deepseek-chat",
+        model: process.env.LYRICS_MODEL || "deepseek-chat",
         messages: [{ role: "user", content: prompt }],
         temperature: 0.7,
       });
@@ -88,39 +76,48 @@ export async function POST(req: Request) {
       const rawContent = chatCompletion.choices?.[0]?.message?.content ?? "";
       const lyrics = coerceChatContentToText(rawContent).trim();
       if (!lyrics) {
-        throw new Error(
-          "歌词生成结果为空（上游返回 content 为空或结构不兼容）",
-        );
+        throw new Error("歌词生成结果为空（上游返回 content 为空或结构不兼容）");
       }
       return NextResponse.json({ success: true, lyrics });
     }
 
-    // 2. 作曲模式
+    // ─── 2. 生成音乐（需要智灵余额校验 + 扣费）─────────────────
     if (action === "generate_music") {
-      console.log(`🎵 提交作曲: [${customTitle || topic}]`);
+      const finalTitle = (customTitle || topic || "Untitled").slice(0, 90);
+      console.log(`🎵 提交作曲: [${finalTitle}]`);
 
-      let finalPrompt = "";
-      if (isInstrumental) {
-        finalPrompt = topic;
-      } else {
-        finalPrompt = customLyrics;
+      // ── 第一步：智灵余额校验 ──────────────────────────────────
+      const zeelinQuery = `生成AI音乐: ${finalTitle}`;
+      let preOrderId: string;
+      let remainCalls: number;
+
+      try {
+        const zeelinResult = await checkZeelinBalance(zeelinQuery);
+        preOrderId = zeelinResult.pre_order_id;
+        remainCalls = zeelinResult.remain_calls;
+        console.log(`✅ 智灵余额校验通过，剩余额度: ${remainCalls}，预订单: ${preOrderId}`);
+      } catch (err) {
+        const msg = (err as Error).message;
+        console.error("❌ 智灵余额校验失败:", msg);
+        // 余额不足返回 402，其他错误返回 503
+        const status = msg.includes("余额不足") ? 402 : 503;
+        return NextResponse.json({ success: false, error: msg }, { status });
       }
 
-      // 【修改】优先使用用户修改过的歌名，如果没有才用主题
-      // Suno 标题限制 90 字符
-      const finalTitle = (customTitle || topic).slice(0, 90);
+      // ── 第二步：提交 Suno 作曲任务 ───────────────────────────
+      let finalPrompt = isInstrumental ? topic : customLyrics;
 
       const sunoPayload = {
         prompt: finalPrompt,
         style: styleTags,
-        title: finalTitle, // 使用最终标题
-        model: "V5",
+        title: finalTitle,
+        model: "suno-v5",
         customMode: true,
         instrumental: isInstrumental,
         callBackUrl: "https://www.google.com",
       };
 
-      const sunoRes = await fetch(`${process.env.SUNO_BASE_URL}/generate`, {
+      const sunoRes = await fetch(`${process.env.SUNO_BASE_URL}/v1/music/generations`, {
         method: "POST",
         headers: {
           Authorization: `Bearer ${process.env.SUNO_API_KEY}`,
@@ -131,25 +128,76 @@ export async function POST(req: Request) {
 
       if (!sunoRes.ok) {
         const errText = await sunoRes.text().catch(() => "");
-        throw new Error(
-          `Suno API 请求失败 (${sunoRes.status}): ${errText || "无错误详情"}`,
-        );
+        // Suno 提交失败 → 不扣费
+        throw new Error(`Suno API 请求失败 (${sunoRes.status}): ${errText || "无错误详情"}`);
       }
 
       const sunoData = await sunoRes.json();
-      const taskId = sunoData.data?.taskId || sunoData.taskId || sunoData.data;
-
+      const taskId = sunoData.task_id;
       if (!taskId) throw new Error("Suno API 未返回 Task ID");
 
-      return NextResponse.json({ success: true, taskId });
+      // ── 第三步：轮询等待完成（最多 55 秒）───────────────────
+      const startedAt = Date.now();
+      const maxWaitMs = 55_000;
+      const pollEveryMs = 4_000;
+      let musicDone = false;
+
+      while (Date.now() - startedAt < maxWaitMs) {
+        await sleep(pollEveryMs);
+
+        try {
+          const statusRes = await fetch(`${process.env.SUNO_BASE_URL}/v1/music/result`, {
+            method: "POST",
+            headers: {
+              Authorization: `Bearer ${process.env.SUNO_API_KEY}`,
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({ model: "suno-v5", task_id: taskId }),
+          });
+
+          if (!statusRes.ok) continue;
+          const statusData = await statusRes.json();
+          const responseData = statusData?.data?.response || statusData?.data || {};
+          const status = responseData?.status || statusData?.data?.status || "PENDING";
+
+          if (status === "SUCCESS" || status === "FIRST_SUCCESS") {
+            musicDone = true;
+            break;
+          }
+          if (["CREATE_TASK_FAILED", "GENERATE_AUDIO_FAILED", "CALLBACK_EXCEPTION", "SENSITIVE_WORD_ERROR"].includes(status)) {
+            break;
+          }
+        } catch (pollErr) {
+          console.error("轮询状态异常:", (pollErr as Error).message);
+        }
+      }
+
+      // ── 第四步：成功才扣费 ────────────────────────────────────
+      if (musicDone) {
+        try {
+          const deductResult = await deductZeelinBalance(preOrderId, ZEELIN_COST_PER_GENERATION);
+          console.log(`💰 智灵扣费成功，扣除 ${deductResult.cost_balance} 额度，剩余 ${deductResult.remain_calls}`);
+        } catch (deductErr) {
+          // 扣费失败不影响用户拿到结果，记录日志即可
+          console.error("⚠️ 智灵扣费失败（音乐已生成）:", (deductErr as Error).message);
+        }
+      } else {
+        console.log("⏳ 音乐生成未在本次请求内完成，跳过扣费，等待前端轮询");
+      }
+
+      // 不管有没有轮询到结果，都把 taskId 返回给前端继续轮询
+      return NextResponse.json({
+        success: true,
+        taskId,
+        // 若超时未完成，把 pre_order_id 带回去，前端轮询完成后可调用 /api/zeelin-confirm 扣费
+        ...(musicDone ? {} : { zeelin_pre_order_id: preOrderId }),
+      });
     }
 
     return NextResponse.json({ error: "Invalid action" }, { status: 400 });
+
   } catch (error: any) {
     console.error("Error:", error);
-    return NextResponse.json(
-      { success: false, error: error.message },
-      { status: 500 },
-    );
+    return NextResponse.json({ success: false, error: error.message }, { status: 500 });
   }
 }

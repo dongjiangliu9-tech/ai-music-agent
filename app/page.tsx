@@ -298,6 +298,16 @@ export default function Home() {
   const [selectedStyle, setSelectedStyle] = useState(MUSIC_STYLES[0].id); // 存ID
   const [selectedMood, setSelectedMood] = useState(MOODS[0]);
   const [isInstrumental, setIsInstrumental] = useState(false);
+
+  // 智灵 app-key（用户自己的，从 localStorage 持久化）
+  const [zeelinAppKey, setZeelinAppKey] = useState<string>(() => {
+    if (typeof window !== "undefined") {
+      return localStorage.getItem("zeelin_app_key") || "";
+    }
+    return "";
+  });
+  const [showKeyInput, setShowKeyInput] = useState(false);
+  const [tempKey, setTempKey] = useState("");
   
   // 流程与UI状态
   const [step, setStep] = useState<GenerationStep>("input");
@@ -340,6 +350,10 @@ export default function Home() {
   // 1. 生成歌词
   const handleLyricsGeneration = async () => {
     if (!topic) return alert("请先输入歌曲主题！");
+    if (!zeelinAppKey.trim()) {
+      setShowKeyInput(true);
+      return;
+    }
     
     // 初始化歌名 (默认为主题)
     setSongTitle(topic);
@@ -398,10 +412,11 @@ export default function Home() {
         body: JSON.stringify({ 
           action: "generate_music",
           topic, 
-          customTitle: finalTitle, // 【新增】传修改后的歌名
+          customTitle: finalTitle,
           styleTags: randomTag,
           isInstrumental,
-          customLyrics: finalLyrics 
+          customLyrics: finalLyrics,
+          zeelin_app_key: zeelinAppKey.trim(), // 用户自己的 key
         })
       });
       if (!res.ok) {
@@ -441,7 +456,10 @@ export default function Home() {
             fetch("/api/zeelin-confirm", {
               method: "POST",
               headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ pre_order_id: zeelinPreOrderId }),
+              body: JSON.stringify({
+                pre_order_id: zeelinPreOrderId,
+                zeelin_app_key: zeelinAppKey, // 用户自己的 key
+              }),
             }).then(r => r.json()).then(d => {
               if (d.success) {
                 console.log(`💰 智灵扣费完成，剩余额度: ${d.remain_calls}`);
@@ -697,20 +715,102 @@ export default function Home() {
 
   const formatDate = (ts: number) => new Date(ts).toLocaleDateString();
 
+  // 保存 app-key 到 localStorage
+  const handleSaveKey = () => {
+    const key = tempKey.trim();
+    if (!key) return;
+    localStorage.setItem("zeelin_app_key", key);
+    setZeelinAppKey(key);
+    setShowKeyInput(false);
+    setTempKey("");
+  };
+
+  const handleClearKey = () => {
+    localStorage.removeItem("zeelin_app_key");
+    setZeelinAppKey("");
+  };
+
   return (
     <main className="min-h-screen bg-[#F8F9FA] flex flex-col items-center py-6 md:py-12 px-4 font-sans text-gray-800 selection:bg-purple-200">
-      
+
+      {/* ── 智灵 App-Key 输入弹窗 ── */}
+      {showKeyInput && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl shadow-2xl p-8 w-full max-w-md animate-in zoom-in-95 duration-200">
+            <div className="flex items-center gap-3 mb-2">
+              <div className="w-10 h-10 bg-purple-100 rounded-full flex items-center justify-center">
+                <Sparkles size={20} className="text-purple-600" />
+              </div>
+              <h2 className="text-xl font-black text-gray-900">输入你的智灵 Key</h2>
+            </div>
+            <p className="text-sm text-gray-500 mb-1">每次生成音乐消耗 <span className="font-bold text-purple-600">200 额度</span></p>
+            <p className="text-xs text-gray-400 mb-6">
+              还没有 Key？前往{" "}
+              <a href="https://skills.zeelin.cn" target="_blank" rel="noopener noreferrer" className="text-purple-500 underline">
+                skills.zeelin.cn
+              </a>{" "}
+              注册并充值
+            </p>
+            <input
+              autoFocus
+              type="text"
+              value={tempKey}
+              onChange={e => setTempKey(e.target.value)}
+              onKeyDown={e => e.key === "Enter" && handleSaveKey()}
+              placeholder="粘贴你的 App-Key..."
+              className="w-full p-4 rounded-2xl bg-gray-50 border-2 border-transparent focus:border-purple-500 outline-none font-mono text-sm mb-4"
+            />
+            <div className="flex gap-3">
+              <button
+                onClick={() => { setShowKeyInput(false); setTempKey(""); }}
+                className="flex-1 py-3 rounded-xl font-bold text-gray-500 hover:bg-gray-100 transition-colors"
+              >
+                取消
+              </button>
+              <button
+                onClick={handleSaveKey}
+                disabled={!tempKey.trim()}
+                className="flex-[2] py-3 rounded-xl font-bold text-white bg-gradient-to-r from-purple-600 to-indigo-600 disabled:opacity-40 hover:brightness-105 transition-all"
+              >
+                确认并开始创作
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* 顶部栏 */}
       <div className="w-full max-w-5xl flex justify-between items-center mb-8 animate-fade-in-down">
         <h1 className="text-2xl md:text-3xl font-black flex items-center gap-2 text-gray-900 tracking-tight cursor-pointer" onClick={()=>setStep("input")}>
           <Sparkles className="text-purple-600 fill-purple-600" />
           AI Music Studio
         </h1>
-        {step !== "input" && (
+        <div className="flex items-center gap-2">
+          {/* Key 状态指示器 */}
+          {zeelinAppKey ? (
+            <button
+              onClick={() => { setTempKey(zeelinAppKey); setShowKeyInput(true); }}
+              className="flex items-center gap-2 px-4 py-2 rounded-full text-xs font-bold bg-green-50 text-green-600 border border-green-200 hover:bg-green-100 transition-colors"
+              title="点击修改 Key"
+            >
+              <span className="w-2 h-2 rounded-full bg-green-500 inline-block"></span>
+              Key 已配置
+            </button>
+          ) : (
+            <button
+              onClick={() => { setTempKey(""); setShowKeyInput(true); }}
+              className="flex items-center gap-2 px-4 py-2 rounded-full text-xs font-bold bg-orange-50 text-orange-500 border border-orange-200 hover:bg-orange-100 transition-colors"
+            >
+              <span className="w-2 h-2 rounded-full bg-orange-400 inline-block animate-pulse"></span>
+              配置智灵 Key
+            </button>
+          )}
+          {step !== "input" && (
             <button onClick={() => {setStep("input"); setCurrentProject(null)}} className="bg-white px-5 py-2.5 rounded-full text-sm font-bold shadow-sm hover:shadow-md transition-all border border-gray-100 flex items-center gap-2">
                <Edit3 size={14}/> 新创作
             </button>
-        )}
+          )}
+        </div>
       </div>
 
       <div className="w-full max-w-5xl transition-all duration-500 flex flex-col lg:flex-row gap-8">

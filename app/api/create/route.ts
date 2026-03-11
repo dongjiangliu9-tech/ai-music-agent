@@ -13,18 +13,14 @@ const openai = new OpenAI({
 function coerceChatContentToText(content: unknown): string {
   if (typeof content === "string") return content;
   if (!content) return "";
-
   if (Array.isArray(content)) {
-    return content
-      .map((part: any) => {
-        if (typeof part === "string") return part;
-        if (part?.type === "text" && typeof part?.text === "string") return part.text;
-        if (typeof part?.text === "string") return part.text;
-        return "";
-      })
-      .join("");
+    return content.map((part: any) => {
+      if (typeof part === "string") return part;
+      if (part?.type === "text" && typeof part?.text === "string") return part.text;
+      if (typeof part?.text === "string") return part.text;
+      return "";
+    }).join("");
   }
-
   const anyContent: any = content;
   if (typeof anyContent?.text === "string") return anyContent.text;
   return "";
@@ -75,9 +71,7 @@ export async function POST(req: Request) {
 
       const rawContent = chatCompletion.choices?.[0]?.message?.content ?? "";
       const lyrics = coerceChatContentToText(rawContent).trim();
-      if (!lyrics) {
-        throw new Error("歌词生成结果为空（上游返回 content 为空或结构不兼容）");
-      }
+      if (!lyrics) throw new Error("歌词生成结果为空（上游返回 content 为空或结构不兼容）");
       return NextResponse.json({ success: true, lyrics });
     }
 
@@ -86,10 +80,23 @@ export async function POST(req: Request) {
       const finalTitle = (customTitle || topic || "Untitled").slice(0, 90);
       console.log(`🎵 提交作曲: [${finalTitle}]`);
 
-      // ── 第一步：智灵余额校验 ──────────────────────────────────
+      // ── 验证用户 app-key ──────────────────────────────────────
+      const userAppKey = typeof body.zeelin_app_key === "string" ? body.zeelin_app_key.trim() : "";
+      if (!userAppKey) {
+        return NextResponse.json(
+          { success: false, error: "请先配置你的智灵 App-Key，前往 https://skills.zeelin.cn 注册获取" },
+          { status: 401 }
+        );
+      }
+
+      // ── 第一步：智灵余额校验（用用户自己的 key）──────────────
       const zeelinQuery = `生成AI音乐: ${finalTitle}`;
       let preOrderId: string;
       let remainCalls: number;
+
+      // 临时替换环境变量为用户的 key
+      const originalKey = process.env.ZEELIN_APP_KEY;
+      process.env.ZEELIN_APP_KEY = userAppKey;
 
       try {
         const zeelinResult = await checkZeelinBalance(zeelinQuery);
@@ -97,15 +104,15 @@ export async function POST(req: Request) {
         remainCalls = zeelinResult.remain_calls;
         console.log(`✅ 智灵余额校验通过，剩余额度: ${remainCalls}，预订单: ${preOrderId}`);
       } catch (err) {
+        process.env.ZEELIN_APP_KEY = originalKey; // 恢复
         const msg = (err as Error).message;
         console.error("❌ 智灵余额校验失败:", msg);
-        // 余额不足返回 402，其他错误返回 503
         const status = msg.includes("余额不足") ? 402 : 503;
         return NextResponse.json({ success: false, error: msg }, { status });
       }
 
       // ── 第二步：提交 Suno 作曲任务 ───────────────────────────
-      let finalPrompt = isInstrumental ? topic : customLyrics;
+      const finalPrompt = isInstrumental ? topic : customLyrics;
 
       const sunoPayload = {
         prompt: finalPrompt,
@@ -127,14 +134,17 @@ export async function POST(req: Request) {
       });
 
       if (!sunoRes.ok) {
+        process.env.ZEELIN_APP_KEY = originalKey; // 恢复
         const errText = await sunoRes.text().catch(() => "");
-        // Suno 提交失败 → 不扣费
         throw new Error(`Suno API 请求失败 (${sunoRes.status}): ${errText || "无错误详情"}`);
       }
 
       const sunoData = await sunoRes.json();
       const taskId = sunoData.task_id;
-      if (!taskId) throw new Error("Suno API 未返回 Task ID");
+      if (!taskId) {
+        process.env.ZEELIN_APP_KEY = originalKey;
+        throw new Error("Suno API 未返回 Task ID");
+      }
 
       // ── 第三步：轮询等待完成（最多 55 秒）───────────────────
       const startedAt = Date.now();
@@ -144,7 +154,6 @@ export async function POST(req: Request) {
 
       while (Date.now() - startedAt < maxWaitMs) {
         await sleep(pollEveryMs);
-
         try {
           const statusRes = await fetch(`${process.env.SUNO_BASE_URL}/v1/music/result`, {
             method: "POST",
@@ -154,19 +163,12 @@ export async function POST(req: Request) {
             },
             body: JSON.stringify({ model: "suno-v5", task_id: taskId }),
           });
-
           if (!statusRes.ok) continue;
           const statusData = await statusRes.json();
           const responseData = statusData?.data?.response || statusData?.data || {};
           const status = responseData?.status || statusData?.data?.status || "PENDING";
-
-          if (status === "SUCCESS" || status === "FIRST_SUCCESS") {
-            musicDone = true;
-            break;
-          }
-          if (["CREATE_TASK_FAILED", "GENERATE_AUDIO_FAILED", "CALLBACK_EXCEPTION", "SENSITIVE_WORD_ERROR"].includes(status)) {
-            break;
-          }
+          if (status === "SUCCESS" || status === "FIRST_SUCCESS") { musicDone = true; break; }
+          if (["CREATE_TASK_FAILED", "GENERATE_AUDIO_FAILED", "CALLBACK_EXCEPTION", "SENSITIVE_WORD_ERROR"].includes(status)) break;
         } catch (pollErr) {
           console.error("轮询状态异常:", (pollErr as Error).message);
         }
@@ -178,19 +180,21 @@ export async function POST(req: Request) {
           const deductResult = await deductZeelinBalance(preOrderId, ZEELIN_COST_PER_GENERATION);
           console.log(`💰 智灵扣费成功，扣除 ${deductResult.cost_balance} 额度，剩余 ${deductResult.remain_calls}`);
         } catch (deductErr) {
-          // 扣费失败不影响用户拿到结果，记录日志即可
           console.error("⚠️ 智灵扣费失败（音乐已生成）:", (deductErr as Error).message);
         }
       } else {
-        console.log("⏳ 音乐生成未在本次请求内完成，跳过扣费，等待前端轮询");
+        console.log("⏳ 音乐生成未在本次请求内完成，跳过扣费，等待前端轮询确认后扣费");
       }
 
-      // 不管有没有轮询到结果，都把 taskId 返回给前端继续轮询
+      // 恢复原始 key
+      process.env.ZEELIN_APP_KEY = originalKey;
+
+      // 把 taskId 和 pre_order_id（超时时用）返回给前端
       return NextResponse.json({
         success: true,
         taskId,
-        // 若超时未完成，把 pre_order_id 带回去，前端轮询完成后可调用 /api/zeelin-confirm 扣费
-        ...(musicDone ? {} : { zeelin_pre_order_id: preOrderId }),
+        // 超时未完成时带回 pre_order_id，前端轮询完成后调 /api/zeelin-confirm 扣费
+        ...(musicDone ? {} : { zeelin_pre_order_id: preOrderId, zeelin_app_key: userAppKey }),
       });
     }
 

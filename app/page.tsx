@@ -2,7 +2,7 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
-import { MUSIC_STYLES, MOODS } from "./lib/data";
+import { MUSIC_STYLES, MOODS, LYRIC_LANGUAGES } from "./lib/data";
 import { getHistory, saveProject, deleteProject, updateProjectTitle, type Project } from "./lib/storage";
 import {
   Music, Sparkles, Download, Disc, Mic2,
@@ -297,6 +297,7 @@ export default function Home() {
   const [songTitle, setSongTitle] = useState(""); // 【新增】歌名状态
   const [selectedStyle, setSelectedStyle] = useState(MUSIC_STYLES[0].id); // 存ID
   const [selectedMood, setSelectedMood] = useState(MOODS[0]);
+  const [selectedLyricLanguage, setSelectedLyricLanguage] = useState(LYRIC_LANGUAGES[0].id);
   const [isInstrumental, setIsInstrumental] = useState(false);
 
   // 智灵 app-key（用户自己的，从 localStorage 持久化）
@@ -379,6 +380,7 @@ export default function Home() {
           styleTags: randomTag,
           styleLabel: styleObj.label,
           mood: selectedMood,
+          lyricLanguage: selectedLyricLanguage,
         })
       });
       if (!res.ok) {
@@ -442,13 +444,18 @@ export default function Home() {
 
   // 3. 轮询状态
   const pollStatus = async (taskId: string, savedLyrics: string, savedTitle: string, zeelinPreOrderId?: string) => {
-    const interval = setInterval(async () => {
+    let interval: ReturnType<typeof setInterval> | null = null;
+    let stopped = false;
+
+    const checkStatus = async () => {
+      if (stopped) return;
       try {
         const res = await fetch(`/api/status?taskId=${taskId}`);
         const data = await res.json();
         
         if (data.status === "SUCCESS" && data.musicList && data.musicList.length > 0) {
-          clearInterval(interval);
+          stopped = true;
+          if (interval) clearInterval(interval);
           setProgress(100);
 
           // 若后端超时未扣费，在这里完成扣费（fire-and-forget，不阻塞UI）
@@ -489,12 +496,22 @@ export default function Home() {
           setTimeout(() => loadProject(newProject), 500); // 稍微停顿展示100%
 
         } else if (data.status === "FAILED") {
-          clearInterval(interval);
+          stopped = true;
+          if (interval) clearInterval(interval);
           alert("Suno 生成失败");
           setStep("input");
+        } else if (data.rawStatus === "FIRST_SUCCESS") {
+          setProgress(old => Math.max(old, 88));
+          setStatusText("第一版已完成，正在等待全部版本...");
+        } else if (data.isFinal && !data.hasDownloadableAudio) {
+          setProgress(old => Math.max(old, 92));
+          setStatusText("歌曲已生成，正在等待可下载音频文件...");
         }
       } catch (e) { console.error(e); }
-    }, 5000);
+    };
+
+    await checkStatus();
+    if (!stopped) interval = setInterval(checkStatus, 30000);
   };
 
   // 加载项目
@@ -848,7 +865,7 @@ export default function Home() {
                 </div>
 
                 {/* 升级后的下拉选择 UI */}
-                <div className="flex flex-col md:flex-row gap-6 mb-12 relative z-20">
+                <div className={`grid grid-cols-1 gap-6 mb-12 relative z-20 ${isInstrumental ? "md:grid-cols-2" : "md:grid-cols-3"}`}>
                     <CustomSelect 
                         label="音乐风格" 
                         value={selectedStyle} 
@@ -861,6 +878,14 @@ export default function Home() {
                         options={MOODS}
                         onChange={setSelectedMood} 
                     />
+                    {!isInstrumental && (
+                        <CustomSelect
+                            label="歌词语言"
+                            value={selectedLyricLanguage}
+                            options={LYRIC_LANGUAGES}
+                            onChange={setSelectedLyricLanguage}
+                        />
+                    )}
                 </div>
 
                 <button 

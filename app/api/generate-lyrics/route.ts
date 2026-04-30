@@ -1,5 +1,6 @@
 import OpenAI from "openai";
 import { NextRequest, NextResponse } from "next/server";
+import { buildLyricLanguagePrompt } from "@/app/lib/lyrics-language";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -61,6 +62,7 @@ export async function POST(req: NextRequest) {
     const musicStyle = isTruthyString(body?.musicStyle) ? body.musicStyle.trim() : "";
     const emotionalStyle = isTruthyString(body?.emotionalStyle) ? body.emotionalStyle.trim() : "";
     const vocalMode = isTruthyString(body?.vocalMode) ? body.vocalMode.trim() : "人声";
+    const lyricLanguage = body?.lyricLanguage ?? body?.targetLanguage ?? body?.language;
 
     if (!creativeIdea) {
       return withCors(
@@ -102,13 +104,14 @@ export async function POST(req: NextRequest) {
 【音乐风格】：${musicStyle || "不指定"}
 【情绪氛围】：${emotionalStyle || "不指定"}
 
+${buildLyricLanguagePrompt(lyricLanguage)}
+
 【创作要求】：
-1. 语言判定：请根据“创作主题”的语言决定歌词语言。
-2. 故事扩展：自行脑补画面，扩展故事细节。
-3. 篇幅限制：300字以内。
-4. 句子长度：每句歌词不超过15字，尽量控制在12字以内。
-5. 段落长度：每段歌词不超过6句，段落内尽量押韵。
-6. 对仗要求：副歌1和副歌2必须严格对仗（字数相近、结构相似、韵律对称）。
+1. 故事扩展：自行脑补画面，扩展故事细节。
+2. 篇幅限制：300字以内；如果目标语言不是中文，则控制为适合一首流行歌的相近长度。
+3. 句子长度：保持短句和可演唱性，中文每句不超过15字，其他语言每句尽量不超过12个单词或自然短语。
+4. 段落长度：每段歌词不超过6句，段落内尽量自然押韵或近似押韵。
+5. 对仗要求：副歌1和副歌2必须结构对应、节奏相近、情绪递进；按目标语言的自然语序处理。
 
 【严格结构要求】：
 [Instrumental]

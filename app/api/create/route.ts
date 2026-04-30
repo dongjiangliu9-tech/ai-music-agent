@@ -2,13 +2,16 @@
 import OpenAI from "openai";
 import { NextResponse } from "next/server";
 import { checkZeelinBalance, deductZeelinBalance, ZEELIN_COST_PER_GENERATION } from "@/app/lib/zeelin";
+import { buildLyricLanguagePrompt } from "@/app/lib/lyrics-language";
+import {
+  buildSunoCallbackUrl,
+  buildSunoGenerateUrl,
+  buildSunoStatusRequest,
+  getSunoModel,
+  normalizeSunoResult,
+} from "@/app/lib/suno";
 
 export const runtime = "nodejs";
-
-const openai = new OpenAI({
-  apiKey: process.env.LYRICS_API_KEY,
-  baseURL: process.env.LYRICS_BASE_URL,
-});
 
 function coerceChatContentToText(content: unknown): string {
   if (typeof content === "string") return content;
@@ -33,7 +36,7 @@ function sleep(ms: number) {
 export async function POST(req: Request) {
   try {
     const body = await req.json();
-    const { action, topic, customTitle, styleLabel, styleTags, mood, isInstrumental, customLyrics } = body;
+    const { action, topic, customTitle, styleLabel, styleTags, mood, isInstrumental, customLyrics, lyricLanguage } = body;
 
     // ─── 1. 生成歌词（免费，不扣额度）──────────────────────────
     if (action === "generate_lyrics") {
@@ -41,27 +44,34 @@ export async function POST(req: Request) {
       【用户输入主题】：${topic}
       【音乐风格】：${styleLabel}
       【情绪基调】：${mood}
+      ${buildLyricLanguagePrompt(lyricLanguage)}
       【创作要求】：
-      1. 语言判定：请根据"${topic}"的语言决定歌词语言。
-      2. 故事扩展：自行脑补画面，扩展故事细节。
-      3. 篇幅限制：300字以内。
-      4. 句子长度：每句歌词不超过15字，尽量控制在12字以内。
-      5. 段落长度：每段歌词不超过6句，段落内保持押韵。
-      6. 对仗要求：副歌1和副歌2必须严格对仗（字数相近、结构相似、韵律对称）。
+      1. 故事扩展：自行脑补画面，扩展故事细节。
+      2. 篇幅限制：300字以内；如果目标语言不是中文，则控制为适合一首流行歌的相近长度。
+      3. 句子长度：保持短句和可演唱性，中文每句不超过15字，其他语言每句尽量不超过12个单词或自然短语。
+      4. 段落长度：每段歌词不超过6句，段落内保持自然押韵或近似押韵。
+      5. 对仗要求：副歌1和副歌2必须结构对应、节奏相近、情绪递进；按目标语言的自然语序处理。
       【严格结构要求】：
       [Instrumental]
-      [Verse 1] (主歌1：铺垫背景，引入故事，最多6句，每句≤15字)
-      [Pre-Chorus] (预副歌：情绪爬升，最多6句，每句≤15字)
-      [Powerful Chorus 1] (副歌1：情感爆发，核心记忆点，最多6句，每句≤15字)
-      [Powerful Chorus 2] (副歌2：必须与副歌1严格对仗，深化主题，最多6句，每句≤15字)
-      [Verse 2] (主歌2：推进情节，细节描写，最多6句，每句≤15字)
-      [Pre-Chorus] (预副歌：情绪爬升，最多6句，每句≤15字)
-      [Powerful Chorus 1] (副歌1回归：最后的高潮，最多6句，每句≤15字)
-      [Powerful Chorus 2] (副歌2回归：必须与副歌1严格对仗，最后的高潮，最多6句，每句≤15字)
-      [Bridge] (桥段：节奏或视角的转变，情绪转折，最多6句，每句≤15字)
-      [Powerful Chorus 2] (副歌2回归：必须与副歌1严格对仗，最后的高潮，最多6句，每句≤15字)
-      [Outro] (结尾：余韵悠长，逐渐淡出，最多6句，每句≤15字)
+      [Verse 1] (主歌1：铺垫背景，引入故事，最多6句，保持短句)
+      [Pre-Chorus] (预副歌：情绪爬升，最多6句，保持短句)
+      [Powerful Chorus 1] (副歌1：情感爆发，核心记忆点，最多6句，保持短句)
+      [Powerful Chorus 2] (副歌2：必须与副歌1结构对应，深化主题，最多6句，保持短句)
+      [Verse 2] (主歌2：推进情节，细节描写，最多6句，保持短句)
+      [Pre-Chorus] (预副歌：情绪爬升，最多6句，保持短句)
+      [Powerful Chorus 1] (副歌1回归：最后的高潮，最多6句，保持短句)
+      [Powerful Chorus 2] (副歌2回归：必须与副歌1结构对应，最后的高潮，最多6句，保持短句)
+      [Bridge] (桥段：节奏或视角的转变，情绪转折，最多6句，保持短句)
+      [Powerful Chorus 2] (副歌2回归：必须与副歌1结构对应，最后的高潮，最多6句，保持短句)
+      [Outro] (结尾：余韵悠长，逐渐淡出，最多6句，保持短句)
       【输出格式】：只输出歌词正文。`;
+
+      const apiKey = process.env.LYRICS_API_KEY;
+      const baseURL = process.env.LYRICS_BASE_URL;
+      if (!apiKey) throw new Error("Missing env: LYRICS_API_KEY");
+      if (!baseURL) throw new Error("Missing env: LYRICS_BASE_URL");
+
+      const openai = new OpenAI({ apiKey, baseURL });
 
       const chatCompletion = await openai.chat.completions.create({
         model: process.env.LYRICS_MODEL || "deepseek-chat",
@@ -112,13 +122,13 @@ export async function POST(req: Request) {
         prompt: isInstrumental ? topic : customLyrics,
         style: styleTags,
         title: finalTitle,
-        model: "suno-v5",
+        model: getSunoModel(sunoBaseUrl),
         customMode: true,
         instrumental: isInstrumental,
-        callBackUrl: "https://www.google.com",
+        callBackUrl: buildSunoCallbackUrl(req),
       };
 
-      const sunoRes = await fetch(`${sunoBaseUrl}/v1/music/generations`, {
+      const sunoRes = await fetch(buildSunoGenerateUrl(sunoBaseUrl), {
         method: "POST",
         headers: { Authorization: `Bearer ${sunoApiKey}`, "Content-Type": "application/json" },
         body: JSON.stringify(sunoPayload),
@@ -131,7 +141,7 @@ export async function POST(req: Request) {
       }
 
       const sunoData = await sunoRes.json();
-      const taskId = sunoData.task_id;
+      const taskId = normalizeSunoResult(sunoData).taskId;
       if (!taskId) throw new Error("Suno 未返回 task_id");
 
       console.log(`🎵 Suno 任务已提交: ${taskId}`);
@@ -143,16 +153,13 @@ export async function POST(req: Request) {
       while (Date.now() - startedAt < 55_000) {
         await sleep(4_000);
         try {
-          const statusRes = await fetch(`${sunoBaseUrl}/v1/music/result`, {
-            method: "POST",
-            headers: { Authorization: `Bearer ${sunoApiKey}`, "Content-Type": "application/json" },
-            body: JSON.stringify({ model: "suno-v5", task_id: taskId }),
-          });
+          const [statusUrl, statusInit] = buildSunoStatusRequest(sunoBaseUrl, sunoApiKey, taskId);
+          const statusRes = await fetch(statusUrl, statusInit);
           if (!statusRes.ok) continue;
           const sd = await statusRes.json();
-          const status = sd?.data?.status || sd?.status || "processing";
-          if (status === "SUCCESS" || status === "completed") { musicDone = true; break; }
-          if (["FAILED", "error", "CREATE_TASK_FAILED", "GENERATE_AUDIO_FAILED"].includes(status)) break;
+          const result = normalizeSunoResult(sd);
+          if (result.status === "SUCCESS") { musicDone = true; break; }
+          if (result.status === "FAILED") break;
         } catch { /* 继续轮询 */ }
       }
 

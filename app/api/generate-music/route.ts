@@ -2,6 +2,14 @@
 // 此接口供 OpenClaw Skill 直接调用（与 /api/create 逻辑对等）
 import { NextRequest, NextResponse } from "next/server";
 import { checkZeelinBalance, deductZeelinBalance, ZEELIN_COST_PER_GENERATION } from "@/app/lib/zeelin";
+import {
+  buildSunoCallbackUrl,
+  buildSunoGenerateUrl,
+  buildSunoStatusRequest,
+  getSunoModel,
+  normalizeSunoResult,
+  type NormalizedSunoSong,
+} from "@/app/lib/suno";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -23,26 +31,6 @@ function isTruthyString(v: unknown): v is string {
 
 function sleep(ms: number) {
   return new Promise((r) => setTimeout(r, ms));
-}
-
-function normalizeSunoStatus(data: any): { status: string; musicList: any[] } {
-  const rd = data?.data?.response || data?.data || {};
-  const sunoData = rd?.sunoData || [];
-  const rawStatus = rd?.status || data?.data?.status || data?.status || "PENDING";
-  const status =
-    rawStatus === "completed" || rawStatus === "SUCCESS" || rawStatus === "FIRST_SUCCESS"
-      ? "SUCCESS"
-      : rawStatus;
-  const musicList = sunoData
-    .map((item: any) => ({
-      id: String(item?.id || ""),
-      title: String(item?.title || "Untitled"),
-      audioUrl: String(item?.audioUrl || item?.audio_url || ""),
-      imageUrl: String(item?.imageUrl || item?.image_url || ""),
-      duration: typeof item?.duration === "number" ? item.duration : undefined,
-    }))
-    .filter((x: any) => x.id && x.audioUrl);
-  return { status, musicList };
 }
 
 export function OPTIONS() {
@@ -114,13 +102,13 @@ export async function POST(req: NextRequest) {
     prompt: instrumental ? creativeIdea : lyrics,
     style: styleString,
     title: finalTitle,
-    model: "suno-v5",
+    model: getSunoModel(sunoBaseUrl),
     customMode: true,
     instrumental,
-    callBackUrl: "https://www.google.com",
+    callBackUrl: buildSunoCallbackUrl(req),
   };
 
-  const submitRes = await fetch(`${sunoBaseUrl}/v1/music/generations`, {
+  const submitRes = await fetch(buildSunoGenerateUrl(sunoBaseUrl), {
     method: "POST",
     headers: { Authorization: `Bearer ${sunoApiKey}`, "Content-Type": "application/json" },
     body: JSON.stringify(sunoPayload),
@@ -135,7 +123,7 @@ export async function POST(req: NextRequest) {
   }
 
   const submitData = await submitRes.json();
-  const taskId = submitData?.task_id || submitData?.data?.taskId || submitData?.data;
+  const taskId = normalizeSunoResult(submitData).taskId;
   if (!taskId) {
     return withCors(NextResponse.json({ success: false, error: "Suno 未返回 task_id" }, { status: 502 }));
   }
@@ -143,25 +131,22 @@ export async function POST(req: NextRequest) {
   // ── 第三步：轮询（最多 55 秒）────────────────────────────────
   const startedAt = Date.now();
   let lastStatus = "PENDING";
-  let lastMusicList: any[] = [];
+  let lastMusicList: NormalizedSunoSong[] = [];
   let musicDone = false;
 
   while (Date.now() - startedAt < 55_000) {
     await sleep(4_000);
     try {
-      const infoRes = await fetch(`${sunoBaseUrl}/v1/music/result`, {
-        method: "POST",
-        headers: { Authorization: `Bearer ${sunoApiKey}`, "Content-Type": "application/json" },
-        body: JSON.stringify({ model: "suno-v5", task_id: taskId }),
-      });
+      const [statusUrl, statusInit] = buildSunoStatusRequest(sunoBaseUrl, sunoApiKey, taskId);
+      const infoRes = await fetch(statusUrl, statusInit);
       if (!infoRes.ok) continue;
       const infoData = await infoRes.json().catch(() => null);
       if (!infoData) continue;
-      const { status, musicList } = normalizeSunoStatus(infoData);
-      lastStatus = status;
-      lastMusicList = musicList;
-      if (status === "SUCCESS" && musicList.length > 0) { musicDone = true; break; }
-      if (["FAILED", "error", "CREATE_TASK_FAILED", "GENERATE_AUDIO_FAILED"].includes(status)) break;
+      const result = normalizeSunoResult(infoData);
+      lastStatus = result.rawStatus;
+      lastMusicList = result.musicList;
+      if (result.status === "SUCCESS") { musicDone = true; break; }
+      if (result.status === "FAILED") break;
     } catch { /* 继续 */ }
   }
 
@@ -178,6 +163,7 @@ export async function POST(req: NextRequest) {
       id: s.id,
       title: finalTitle || s.title,
       audio_url: s.audioUrl,
+      stream_audio_url: s.streamAudioUrl,
       duration: s.duration,
       cover: s.imageUrl,
     }));
@@ -196,10 +182,11 @@ export async function POST(req: NextRequest) {
     success: true,
     taskId,
     status: lastStatus,
-    songs: lastMusicList.map((s: any) => ({
+    songs: lastMusicList.map((s: NormalizedSunoSong) => ({
       id: s.id,
       title: finalTitle || s.title,
       audio_url: s.audioUrl,
+      stream_audio_url: s.streamAudioUrl,
       duration: s.duration,
       cover: s.imageUrl,
     })),

@@ -335,3 +335,26 @@ export const MOODS = [
   "忧虑 (Worried)",
   "满足 (Content)"
 ];
+
+export const LYRIC_LANGUAGES = [
+  { id: "auto", label: "自动识别" },
+  { id: "zh-CN", label: "中文（简体）" },
+  { id: "zh-TW", label: "中文（繁体）" },
+  { id: "en", label: "English" },
+  { id: "ja", label: "日本語" },
+  { id: "ko", label: "한국어" },
+  { id: "es", label: "Español" },
+  { id: "fr", label: "Français" },
+  { id: "de", label: "Deutsch" },
+  { id: "pt", label: "Português" },
+  { id: "it", label: "Italiano" },
+  { id: "ru", label: "Русский" },
+  { id: "ar", label: "العربية" },
+  { id: "hi", label: "हिन्दी" },
+  { id: "id", label: "Bahasa Indonesia" },
+  { id: "vi", label: "Tiếng Việt" },
+  { id: "th", label: "ไทย" },
+  { id: "tr", label: "Türkçe" },
+  { id: "nl", label: "Nederlands" },
+  { id: "pl", label: "Polski" },
+];
